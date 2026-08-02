@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Writes backups/huntarr-YYYYMMDD-HHMMSS.sql.gz under the repo root.
-  Default container: huntarr-db (Windows Docker / MediaServer naming).
+  Default container: huntarr-db (Docker Compose default naming).
 
 .PARAMETER ContainerName
   Docker container name for Postgres.

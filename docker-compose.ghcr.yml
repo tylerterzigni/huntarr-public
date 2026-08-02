@@ -1,23 +1,20 @@
-# GHCR pull overlay — use the published image instead of a local build.
+# Optional: pull a pre-built image instead of building locally.
 #
 # Prerequisites:
-#   docker login ghcr.io -u tylerterzigni --password-stdin   # PAT with read:packages
+#   docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin   # PAT with read:packages
 #   .env present (copy from .env.example; set AUTH_URL to the URL clients use)
 #
-# Usage (keeps Windows default compose + named volume postgres_data):
+# Usage (with the default compose + named volume postgres_data):
 #   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 #   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 #
 # Optional tag override:
-#   HUNTARR_IMAGE=ghcr.io/YOUR_GITHUB_USER/huntarr:test docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#   HUNTARR_IMAGE=ghcr.io/YOUR_GITHUB_USER/huntarr:latest docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 #
-# Default local workflow is unchanged:
+# Default local workflow (no GHCR required):
 #   docker compose up -d --build
-#
-# For MediaServer bind-mount Postgres, prefer:
-#   deploy/docker-compose.mediaserver.yml
 
 services:
   app:
-    image: ${HUNTARR_IMAGE:-ghcr.io/YOUR_GITHUB_USER/huntarr:production}
+    image: ${HUNTARR_IMAGE:-ghcr.io/YOUR_GITHUB_USER/huntarr:latest}
     build: !reset null

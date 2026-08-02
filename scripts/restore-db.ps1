@@ -5,8 +5,7 @@
 
 .DESCRIPTION
   Requires an explicit dump path and interactive confirmation (type RESTORE).
-  Refuses cross-environment restores (Windows dump → MediaServer or reverse)
-  unless -AllowCrossEnvironment is passed with owner intent.
+  Warns when dump path heuristics suggest a different machine.
   Restore is never part of the default update path.
 
 .PARAMETER DumpFile
@@ -16,11 +15,10 @@
   Docker container name for Postgres.
 
 .PARAMETER Environment
-  Label for the target: Windows or MediaServer (used in prompts / guards).
+  Label for the target: Local or Remote (prompts / guards only).
 
 .PARAMETER AllowCrossEnvironment
-  Required to restore when dump name/path suggests the other environment,
-  or when -ForceCross is needed after the script warns. Prefer separate DBs.
+  Required when dump path heuristics suggest a different environment.
 
 .EXAMPLE
   .\scripts\restore-db.ps1 -DumpFile .\backups\huntarr-20260101-120000.sql.gz
@@ -32,8 +30,8 @@ param(
 
   [string] $ContainerName = "huntarr-db",
 
-  [ValidateSet("Windows", "MediaServer")]
-  [string] $Environment = "Windows",
+  [ValidateSet("Local", "Remote")]
+  [string] $Environment = "Local",
 
   [switch] $AllowCrossEnvironment
 )
@@ -60,21 +58,21 @@ function Assert-ContainerRunning([string] $Name) {
 Assert-ContainerRunning $ContainerName
 
 $lowerPath = $DumpFile.ToLowerInvariant()
-$looksMediaServer = $lowerPath -match "mediaserver|/mnt/md0/"
-$looksWindows = $lowerPath -match "onedrive|\\projects\\huntarr|windows"
+$looksRemote = $lowerPath -match "remote|/var/lib|/data/postgres|nas|homelab"
+$looksLocal = $lowerPath -match "local|laptop|desktop|projects[/\\]huntarr"
 
-if ($Environment -eq "MediaServer" -and $looksWindows -and -not $AllowCrossEnvironment) {
+if ($Environment -eq "Remote" -and $looksLocal -and -not $AllowCrossEnvironment) {
   throw @"
-Refusing to restore a Windows-looking dump onto MediaServer.
-Windows Docker DB and MediaServer DB are strictly separate.
-If the owner explicitly requested this one-way restore, re-run with -AllowCrossEnvironment after taking a fresh production backup.
+Refusing to restore a local-looking dump onto a remote environment.
+Keep separate Huntarr databases per machine.
+If you intentionally mean to migrate, re-run with -AllowCrossEnvironment after taking a fresh backup.
 "@
 }
 
-if ($Environment -eq "Windows" -and $looksMediaServer -and -not $AllowCrossEnvironment) {
+if ($Environment -eq "Local" -and $looksRemote -and -not $AllowCrossEnvironment) {
   throw @"
-Refusing to restore a MediaServer-looking dump onto Windows Docker.
-Re-run with -AllowCrossEnvironment only if the owner explicitly requested it.
+Refusing to restore a remote-looking dump onto the local environment.
+Re-run with -AllowCrossEnvironment only if you explicitly intend a migration.
 "@
 }
 

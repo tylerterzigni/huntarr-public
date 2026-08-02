@@ -22,6 +22,7 @@ export function BecauseYouWatchedSeedSearch({
 }: BecauseYouWatchedSeedSearchProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const openedByPointerRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<WatchSeedResult[]>([]);
@@ -36,6 +37,7 @@ export function BecauseYouWatchedSeedSearch({
     setLoading(false);
   }, []);
 
+  // Delay outside-dismiss so the opening tap cannot instantly close after layout shift.
   useEffect(() => {
     if (!open) return;
 
@@ -43,7 +45,7 @@ export function BecauseYouWatchedSeedSearch({
       if (e.key === "Escape") handleClose();
     }
 
-    function onMouseDown(e: MouseEvent) {
+    function onPointerDown(e: PointerEvent) {
       const target = e.target;
       if (!(target instanceof Node)) return;
       if (containerRef.current?.contains(target)) return;
@@ -52,18 +54,18 @@ export function BecauseYouWatchedSeedSearch({
 
     document.addEventListener("keydown", onKeyDown);
     const attachTimer = window.setTimeout(() => {
-      document.addEventListener("mousedown", onMouseDown, true);
-    }, 0);
+      document.addEventListener("pointerdown", onPointerDown, true);
+    }, 200);
 
     return () => {
       window.clearTimeout(attachTimer);
       document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onMouseDown, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, [open, handleClose]);
 
   useEffect(() => {
-    if (!open || !query.trim()) {
+    if (!open) {
       setResults([]);
       setShowResults(false);
       setLoading(false);
@@ -74,21 +76,50 @@ export function BecauseYouWatchedSeedSearch({
       setLoading(true);
       setShowResults(true);
       try {
-        const res = await fetch(`/api/watch-history/search?q=${encodeURIComponent(query.trim())}`);
+        const params = new URLSearchParams();
+        const trimmed = query.trim();
+        if (trimmed) params.set("q", trimmed);
+        const res = await fetch(`/api/watch-history/search?${params.toString()}`);
         const data = await res.json();
-        setResults(data.results ?? []);
+        // API already dedupes by mediaType:tmdbId; keep UI unique as a safety net.
+        const seen = new Set<string>();
+        const unique: WatchSeedResult[] = [];
+        for (const seed of (data.results ?? []) as WatchSeedResult[]) {
+          const key = `${seed.mediaType}:${seed.tmdbId}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          unique.push(seed);
+        }
+        setResults(unique);
       } catch {
         setResults([]);
       } finally {
         setLoading(false);
       }
-    }, 300);
+    }, query.trim() ? 300 : 0);
 
     return () => window.clearTimeout(timer);
   }, [open, query]);
 
   function focusInput() {
     window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
+  }
+
+  function isMobileViewport() {
+    return window.matchMedia("(max-width: 767px)").matches;
+  }
+
+  function openSearch() {
+    if (disabled) return;
+
+    if (open) {
+      // Already open: only refocus on desktop. Mobile keeps the list up without the keyboard.
+      if (!isMobileViewport()) focusInput();
+      return;
+    }
+
+    setOpen(true);
+    if (!isMobileViewport()) focusInput();
   }
 
   function handleSelect(seed: WatchSeedResult) {
@@ -101,20 +132,29 @@ export function BecauseYouWatchedSeedSearch({
       <div
         className={cn(
           "flex items-center rounded-md text-sm font-medium transition-colors",
-          open ? "bg-gray-900/10 text-gray-900" : "text-gray-600 hover:bg-gray-900/5 hover:text-gray-900"
+          open
+            ? "bg-gray-900/10 text-gray-900"
+            : "text-gray-600 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-gray-900/5 [@media(hover:hover)_and_(pointer:fine)]:hover:text-gray-900"
         )}
       >
         <button
           type="button"
           disabled={disabled}
+          aria-expanded={open}
+          onPointerDown={(e) => {
+            if (disabled || e.button !== 0) return;
+            // Open on the first press so iOS sticky-hover cannot eat the initial tap.
+            e.preventDefault();
+            openedByPointerRef.current = true;
+            openSearch();
+          }}
           onClick={() => {
-            if (disabled) return;
-            if (open) {
-              focusInput();
-            } else {
-              setOpen(true);
-              focusInput();
+            // Keyboard / non-pointer activation.
+            if (openedByPointerRef.current) {
+              openedByPointerRef.current = false;
+              return;
             }
+            openSearch();
           }}
           className="flex shrink-0 items-center justify-center px-2 py-2 disabled:opacity-50"
           aria-label="Search watched titles"
@@ -128,17 +168,18 @@ export function BecauseYouWatchedSeedSearch({
             <input
               ref={inputRef}
               type="search"
-              autoFocus
+              inputMode="search"
+              enterKeyHint="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search watch history..."
+              placeholder="Search watched movies & shows..."
               className="ml-1 h-8 w-[220px] max-w-[40vw] shrink-0 rounded-md border border-gray-400 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-500 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500"
             />
             <button
               type="button"
               onClick={handleClose}
               aria-label="Close search"
-              className="ml-1 shrink-0 rounded-md p-1 text-gray-700 hover:bg-gray-900/5"
+              className="ml-1 shrink-0 rounded-md p-1 text-gray-700 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-gray-900/5"
             >
               <X className="h-4 w-4" />
             </button>
@@ -152,11 +193,15 @@ export function BecauseYouWatchedSeedSearch({
             {loading && (
               <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Searching watch history...
+                Loading watched titles...
               </div>
             )}
-            {!loading && results.length === 0 && query.trim() && (
-              <p className="px-3 py-2 text-sm text-muted-foreground">No watched titles found.</p>
+            {!loading && results.length === 0 && (
+              <p className="px-3 py-2 text-sm text-muted-foreground">
+                {query.trim()
+                  ? "No watched titles found."
+                  : "No watched movies or shows yet. Sync Tautulli/Plex history first."}
+              </p>
             )}
             {!loading &&
               results.map((seed) => (
@@ -164,7 +209,7 @@ export function BecauseYouWatchedSeedSearch({
                   key={`${seed.mediaType}:${seed.tmdbId}`}
                   type="button"
                   onClick={() => handleSelect(seed)}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-seerr-hover"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm [@media(hover:hover)_and_(pointer:fine)]:hover:bg-seerr-hover"
                 >
                   <span className="truncate">{seed.title}</span>
                   <span className="shrink-0 text-xs uppercase text-muted-foreground">

@@ -2224,18 +2224,17 @@ export async function getRecentWatchSeeds(userId: string): Promise<WatchSeed[]> 
 export async function searchWatchHistory(
   userId: string,
   query: string,
-  limit = 10
+  limit = 25
 ): Promise<WatchSeed[]> {
   const q = query.trim().toLowerCase();
-  if (!q) return [];
-
   const entries = dedupeAndSortWatchEntries(await getUserWatchHistoryEntries(userId));
   const titleCache = new Map<string, string>();
   const results: WatchSeed[] = [];
 
   for (const entry of entries) {
     const title = await resolveWatchSeedTitle(entry, titleCache);
-    if (!title || !title.toLowerCase().includes(q)) continue;
+    if (!title) continue;
+    if (q && !title.toLowerCase().includes(q)) continue;
     results.push({ tmdbId: entry.tmdbId, mediaType: entry.mediaType, title });
     if (results.length >= limit) break;
   }

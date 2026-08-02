@@ -8,7 +8,12 @@ interface MediaRowSkeletonProps {
 
 export function MediaRowSkeleton({ title, subtitle, count = 8 }: MediaRowSkeletonProps) {
   return (
-    <section className="mb-5 md:mb-10" aria-busy="true" aria-label={`Loading ${title}`}>
+    <section
+      className="mb-5 md:mb-10"
+      aria-busy="true"
+      aria-label={`Loading ${title}`}
+      data-huntarr-loading="true"
+    >
       <div className="mb-2 px-4 md:mb-4 md:px-8">
         <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
         {subtitle && <p className="text-sm text-gray-600 mt-1">{subtitle}</p>}

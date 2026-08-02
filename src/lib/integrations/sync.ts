@@ -5,8 +5,10 @@ import { getDecryptedPlexInstance, getDecryptedTautulliInstance } from "@/lib/se
 import {
   fetchPlexLibrary,
   fetchPlexMachineIdentifier,
+  fetchPlexMovieWatchStateByRatingKeys,
   fetchPlexShowLeafCountsByRatingKeys,
   fetchPlexShowWatchProgressByRatingKeys,
+  type PlexLibraryItem,
 } from "@/lib/integrations/plex/client";
 import {
   getAllWatchHistory,
@@ -22,24 +24,143 @@ import {
   TAUTULLI_HISTORY_MAX_RECORDS,
   TAUTULLI_HISTORY_PAGE_SIZE,
 } from "@/lib/recommendations/constants";
+import {
+  phaseProgress,
+  reportSyncProgress,
+  type SyncProgressCallback,
+} from "@/lib/integrations/sync-progress";
 
-export async function syncPlexLibrary() {
+type WatchHistoryUpsert = {
+  tautulliUsername: string;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  watchedAt?: Date | null;
+  ratingKey?: string | null;
+  fullyWatched: boolean;
+  syncedAt: Date;
+};
+
+function isPlexItemWatched(item: PlexLibraryItem): boolean {
+  if (item.mediaType === "movie") return item.viewCount > 0;
+  return item.viewedLeafCount > 0;
+}
+
+function isPlexItemFullyWatched(item: PlexLibraryItem): boolean {
+  if (item.mediaType === "movie") return item.viewCount > 0;
+  return item.leafCount > 0 && item.viewedLeafCount >= item.leafCount;
+}
+
+/** One row per username + mediaType + tmdbId (keeps newest watchedAt / fullyWatched). */
+function dedupeWatchHistoryUpserts(values: WatchHistoryUpsert[]): WatchHistoryUpsert[] {
+  const byKey = new Map<string, WatchHistoryUpsert>();
+
+  for (const value of values) {
+    const key = `${value.tautulliUsername}:${value.mediaType}:${value.tmdbId}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, value);
+      continue;
+    }
+
+    const existingTime = existing.watchedAt?.getTime() ?? 0;
+    const nextTime = value.watchedAt?.getTime() ?? 0;
+    byKey.set(key, {
+      ...existing,
+      title: value.title || existing.title,
+      ratingKey: value.ratingKey ?? existing.ratingKey,
+      watchedAt:
+        nextTime > existingTime
+          ? value.watchedAt
+          : existing.watchedAt ?? value.watchedAt ?? null,
+      fullyWatched: existing.fullyWatched || value.fullyWatched,
+      syncedAt: value.syncedAt > existing.syncedAt ? value.syncedAt : existing.syncedAt,
+    });
+  }
+
+  return [...byKey.values()];
+}
+
+function plexWatchedUpserts(
+  items: PlexLibraryItem[],
+  usernames: string[],
+  syncedAt: Date
+): WatchHistoryUpsert[] {
+  const watched = items.filter(isPlexItemWatched);
+  if (watched.length === 0 || usernames.length === 0) return [];
+
+  const values: WatchHistoryUpsert[] = [];
+  for (const username of usernames) {
+    for (const item of watched) {
+      values.push({
+        tautulliUsername: username,
+        tmdbId: item.tmdbId,
+        mediaType: item.mediaType,
+        title: item.title,
+        watchedAt: item.lastViewedAt,
+        ratingKey: item.plexRatingKey,
+        fullyWatched: isPlexItemFullyWatched(item),
+        syncedAt,
+      });
+    }
+  }
+
+  return dedupeWatchHistoryUpserts(values);
+}
+
+export async function syncPlexLibrary(
+  usernames: string[] = [],
+  onProgress?: SyncProgressCallback
+) {
   const instance = await getDecryptedPlexInstance();
   if (!instance) {
     throw new Error("No Plex instance configured. Add one in Settings → Plex and ensure it is enabled.");
   }
 
+  reportSyncProgress(onProgress, {
+    phase: "fetch",
+    current: 0,
+    total: 100,
+    message: "Connecting to Plex…",
+  });
+
   clearGuidResolutionCache();
-  const items = await fetchPlexLibrary(instance);
+  const items = await fetchPlexLibrary(instance, (progress) => {
+    const fraction =
+      progress.sectionTotal > 0 ? progress.sectionIndex / progress.sectionTotal : 0;
+    const { current, total } = phaseProgress(0, 55, fraction);
+    reportSyncProgress(onProgress, {
+      phase: "fetch",
+      current,
+      total,
+      message:
+        progress.sectionTitle === "done"
+          ? `Fetched ${progress.resolvedItems} library items`
+          : `Scanning “${progress.sectionTitle}” (${progress.sectionIndex + 1}/${progress.sectionTotal})…`,
+    });
+  });
+
+  reportSyncProgress(onProgress, {
+    phase: "machine",
+    ...phaseProgress(55, 60, 1),
+    message: "Saving Plex server identity…",
+  });
 
   const machineId = await fetchPlexMachineIdentifier(instance);
   if (machineId) {
     await setGlobalSetting("plex_machine_identifier", machineId);
   }
 
+  reportSyncProgress(onProgress, {
+    phase: "save",
+    ...phaseProgress(60, 85, 0),
+    message: `Writing ${items.length} items to library cache…`,
+  });
+
   await db.delete(plexLibraryCache);
 
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     await db
       .insert(plexLibraryCache)
       .values({
@@ -51,25 +172,47 @@ export async function syncPlexLibrary() {
         plexRatingKey: item.plexRatingKey,
       })
       .onConflictDoNothing();
+
+    if (i === items.length - 1 || i % 50 === 0) {
+      const fraction = items.length > 0 ? (i + 1) / items.length : 1;
+      reportSyncProgress(onProgress, {
+        phase: "save",
+        ...phaseProgress(60, 85, fraction),
+        message: `Writing library cache (${i + 1}/${items.length})…`,
+      });
+    }
   }
 
-  return { synced: items.length };
+  const trimmed = usernames.map((u) => u.trim()).filter(Boolean);
+  let watchedSynced = 0;
+  if (trimmed.length > 0) {
+    reportSyncProgress(onProgress, {
+      phase: "watched",
+      ...phaseProgress(85, 100, 0),
+      message: "Updating watched titles from Plex…",
+    });
+    const watchedRows = plexWatchedUpserts(items, trimmed, new Date());
+    if (watchedRows.length > 0) {
+      await upsertWatchHistoryRows(watchedRows);
+      watchedSynced = watchedRows.length;
+    }
+  }
+
+  reportSyncProgress(onProgress, {
+    phase: "done",
+    current: 100,
+    total: 100,
+    message: `Synced ${items.length} library items`,
+  });
+
+  return { synced: items.length, watchedSynced };
 }
 
-async function upsertWatchHistoryRows(
-  values: Array<{
-    tautulliUsername: string;
-    tmdbId: number;
-    mediaType: "movie" | "tv";
-    title: string;
-    watchedAt?: Date | null;
-    ratingKey?: string | null;
-    fullyWatched: boolean;
-    syncedAt: Date;
-  }>
-) {
-  for (let i = 0; i < values.length; i += 100) {
-    const chunk = values.slice(i, i + 100);
+async function upsertWatchHistoryRows(values: WatchHistoryUpsert[]) {
+  const deduped = dedupeWatchHistoryUpserts(values);
+
+  for (let i = 0; i < deduped.length; i += 100) {
+    const chunk = deduped.slice(i, i + 100);
     await db
       .insert(watchHistoryCache)
       .values(chunk)
@@ -80,10 +223,15 @@ async function upsertWatchHistoryRows(
           watchHistoryCache.mediaType,
         ],
         set: {
-          title: sql`excluded.title`,
-          watchedAt: sql`excluded.watched_at`,
-          ratingKey: sql`excluded.rating_key`,
-          fullyWatched: sql`excluded.fully_watched`,
+          title: sql`COALESCE(NULLIF(excluded.title, ''), ${watchHistoryCache.title})`,
+          watchedAt: sql`CASE
+            WHEN excluded.watched_at IS NULL THEN ${watchHistoryCache.watchedAt}
+            WHEN ${watchHistoryCache.watchedAt} IS NULL THEN excluded.watched_at
+            WHEN excluded.watched_at > ${watchHistoryCache.watchedAt} THEN excluded.watched_at
+            ELSE ${watchHistoryCache.watchedAt}
+          END`,
+          ratingKey: sql`COALESCE(excluded.rating_key, ${watchHistoryCache.ratingKey})`,
+          fullyWatched: sql`${watchHistoryCache.fullyWatched} OR excluded.fully_watched`,
           playCount: 1,
           syncedAt: sql`excluded.synced_at`,
         },
@@ -91,44 +239,65 @@ async function upsertWatchHistoryRows(
   }
 }
 
-async function upsertPlexFullyWatchedTv(
+/**
+ * When Tautulli sync runs without a fresh library pull, merge Plex-watched
+ * movies/shows from the existing library cache into watch history.
+ */
+async function upsertPlexWatchedFromCache(
   usernames: string[],
   plexInstance: NonNullable<Awaited<ReturnType<typeof getDecryptedPlexInstance>>>
 ) {
-  const tvRows = await db
-    .select()
-    .from(plexLibraryCache)
-    .where(eq(plexLibraryCache.mediaType, "tv"));
+  const rows = await db.select().from(plexLibraryCache);
+  if (rows.length === 0) return;
 
-  const ratingKeys = tvRows
-    .map((row) => row.plexRatingKey)
-    .filter((key): key is string => !!key);
-  if (ratingKeys.length === 0) return;
+  const movieKeys = rows
+    .filter((row) => row.mediaType === "movie" && row.plexRatingKey)
+    .map((row) => row.plexRatingKey as string);
+  const tvKeys = rows
+    .filter((row) => row.mediaType === "tv" && row.plexRatingKey)
+    .map((row) => row.plexRatingKey as string);
 
-  const progress = await fetchPlexShowWatchProgressByRatingKeys(plexInstance, ratingKeys);
+  const [progress, movieWatch] = await Promise.all([
+    fetchPlexShowWatchProgressByRatingKeys(plexInstance, tvKeys),
+    fetchPlexMovieWatchStateByRatingKeys(plexInstance, movieKeys),
+  ]);
+
   const syncedAt = new Date();
-  const values = [];
+  const values: WatchHistoryUpsert[] = [];
 
   for (const username of usernames) {
-    for (const row of tvRows) {
+    for (const row of rows) {
       if (!row.plexRatingKey) continue;
-      const showProgress = progress.get(row.plexRatingKey);
-      if (
-        !showProgress ||
-        showProgress.leafCount <= 0 ||
-        showProgress.viewedLeafCount < showProgress.leafCount
-      ) {
+
+      if (row.mediaType === "movie") {
+        const state = movieWatch.get(row.plexRatingKey);
+        if (!state || state.viewCount <= 0) continue;
+        values.push({
+          tautulliUsername: username,
+          tmdbId: row.tmdbId,
+          mediaType: "movie",
+          title: row.title,
+          watchedAt: state.lastViewedAt,
+          ratingKey: row.plexRatingKey,
+          fullyWatched: true,
+          syncedAt,
+        });
         continue;
       }
+
+      const showProgress = progress.get(row.plexRatingKey);
+      if (!showProgress || showProgress.viewedLeafCount <= 0) continue;
 
       values.push({
         tautulliUsername: username,
         tmdbId: row.tmdbId,
-        mediaType: "tv" as const,
+        mediaType: "tv",
         title: row.title,
         watchedAt: null,
         ratingKey: row.plexRatingKey,
-        fullyWatched: true,
+        fullyWatched:
+          showProgress.leafCount > 0 &&
+          showProgress.viewedLeafCount >= showProgress.leafCount,
         syncedAt,
       });
     }
@@ -139,7 +308,10 @@ async function upsertPlexFullyWatchedTv(
   }
 }
 
-export async function syncTautulliHistory(usernames: string[]) {
+export async function syncTautulliHistory(
+  usernames: string[],
+  onProgress?: SyncProgressCallback
+) {
   const instance = await getDecryptedTautulliInstance();
   if (!instance) {
     throw new Error("No Tautulli instance configured. Add one in Settings → Tautulli and ensure it is enabled.");
@@ -152,6 +324,13 @@ export async function syncTautulliHistory(usernames: string[]) {
     );
   }
 
+  reportSyncProgress(onProgress, {
+    phase: "start",
+    current: 0,
+    total: 100,
+    message: `Syncing watch history for ${trimmed.length} user${trimmed.length === 1 ? "" : "s"}…`,
+  });
+
   clearGuidResolutionCache();
   const plexInstance = await getDecryptedPlexInstance();
   let total = 0;
@@ -159,8 +338,27 @@ export async function syncTautulliHistory(usernames: string[]) {
   let movies = 0;
   let tv = 0;
 
-  for (const username of trimmed) {
+  // Reserve 0–90% for per-user work; 90–100% for final Plex merge.
+  const userSpan = 90 / trimmed.length;
+
+  for (let userIndex = 0; userIndex < trimmed.length; userIndex++) {
+    const username = trimmed[userIndex];
+    const userStart = userIndex * userSpan;
+
+    reportSyncProgress(onProgress, {
+      phase: "resolve-user",
+      ...phaseProgress(userStart, userStart + userSpan * 0.1, 1),
+      message: `Resolving Tautulli user “${username}”…`,
+    });
+
     const tautulliUser = await resolveTautulliUser(instance, username);
+
+    reportSyncProgress(onProgress, {
+      phase: "fetch-history",
+      ...phaseProgress(userStart + userSpan * 0.1, userStart + userSpan * 0.35, 0),
+      message: `Fetching watch history for “${username}”…`,
+    });
+
     const rows = await getAllWatchHistory(
       instance,
       tautulliUser.user_id,
@@ -168,6 +366,12 @@ export async function syncTautulliHistory(usernames: string[]) {
       TAUTULLI_HISTORY_MAX_RECORDS
     );
     fetched += rows.length;
+
+    reportSyncProgress(onProgress, {
+      phase: "fetch-history",
+      ...phaseProgress(userStart + userSpan * 0.1, userStart + userSpan * 0.35, 1),
+      message: `Fetched ${rows.length} history entries for “${username}”`,
+    });
 
     const showRatingKeys = [
       ...new Set(
@@ -186,6 +390,12 @@ export async function syncTautulliHistory(usernames: string[]) {
       .map((row) => row.plexRatingKey)
       .filter((key): key is string => !!key);
     const allShowRatingKeys = [...new Set([...showRatingKeys, ...plexRatingKeys])];
+
+    reportSyncProgress(onProgress, {
+      phase: "enrich",
+      ...phaseProgress(userStart + userSpan * 0.35, userStart + userSpan * 0.5, 0),
+      message: `Enriching “${username}” with Plex progress…`,
+    });
 
     let plexLeafCounts = new Map<string, number>();
     let plexWatchProgress = new Map<
@@ -207,6 +417,12 @@ export async function syncTautulliHistory(usernames: string[]) {
       }
     }
 
+    reportSyncProgress(onProgress, {
+      phase: "map",
+      ...phaseProgress(userStart + userSpan * 0.5, userStart + userSpan * 0.8, 0),
+      message: `Mapping “${username}” history to TMDB…`,
+    });
+
     const fullyWatchedByShow = await computeFullyWatchedByShow(
       instance,
       rows,
@@ -216,6 +432,12 @@ export async function syncTautulliHistory(usernames: string[]) {
       username
     );
     const mapped = await mapHistoryToTmdb(instance, rows, plexInstance);
+
+    reportSyncProgress(onProgress, {
+      phase: "save",
+      ...phaseProgress(userStart + userSpan * 0.8, userStart + userSpan, 0),
+      message: `Saving “${username}” watch history…`,
+    });
 
     const syncedAt = new Date();
     const values = mapped.map((item) => ({
@@ -259,11 +481,30 @@ export async function syncTautulliHistory(usernames: string[]) {
       else tv++;
       total++;
     }
+
+    reportSyncProgress(onProgress, {
+      phase: "save",
+      ...phaseProgress(userStart + userSpan * 0.8, userStart + userSpan, 1),
+      message: `Saved ${mapped.length} titles for “${username}”`,
+    });
   }
 
   if (plexInstance) {
-    await upsertPlexFullyWatchedTv(trimmed, plexInstance);
+    reportSyncProgress(onProgress, {
+      phase: "plex-merge",
+      ...phaseProgress(90, 100, 0),
+      message: "Merging Plex watched titles into history…",
+    });
+    // Merge Plex-watched movies + shows (any viewed episodes) into seed/search history.
+    await upsertPlexWatchedFromCache(trimmed, plexInstance);
   }
+
+  reportSyncProgress(onProgress, {
+    phase: "done",
+    current: 100,
+    total: 100,
+    message: `Synced ${total} titles from ${fetched} history entries`,
+  });
 
   return { synced: total, fetched, movies, tv };
 }

@@ -2,12 +2,12 @@
 
 import { useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { posterUrl, cn } from "@/lib/utils";
 import { getMediaTitle, inferMediaType } from "@/lib/integrations/tmdb/helpers";
 import { useIntentTap } from "@/hooks/useIntentTap";
 import { HidePosterButton } from "./HidePosterButton";
+import { PosterImage } from "./PosterImage";
 import { useInScrollRow } from "./ScrollRowContext";
 import type { RecommendationItem, TmdbMediaItem } from "@/types";
 
@@ -27,45 +27,24 @@ interface MediaCardProps {
   onHidden?: () => void;
 }
 
-function ScrollRowPoster({
-  src,
-  alt,
-}: {
-  src: string;
-  alt: string;
-}) {
-  return (
-    <div
-      role="img"
-      aria-label={alt}
-      className="h-full w-full bg-cover bg-center"
-      style={{ backgroundImage: `url("${src}")` }}
-    />
-  );
-}
-
 interface PosterFrameProps {
   item: TmdbMediaItem | RecommendationItem;
   title: string;
   mediaType: ReturnType<typeof inferMediaType>;
-  useBackgroundPoster: boolean;
   onHidden: () => void;
   href: string;
   navigateOnClick: boolean;
   posterClassName?: string;
-  imageSizes?: string;
 }
 
 function PosterFrame({
   item,
   title,
   mediaType,
-  useBackgroundPoster,
   onHidden,
   href,
   navigateOnClick,
   posterClassName = "w-[160px]",
-  imageSizes = "160px",
 }: PosterFrameProps) {
   const router = useRouter();
   const [posterHovered, setPosterHovered] = useState(false);
@@ -76,19 +55,6 @@ function PosterFrame({
   function blockPosterNavigation() {
     blockPosterNavUntilRef.current = Date.now() + 1500;
   }
-
-  const posterImage = useBackgroundPoster ? (
-    <ScrollRowPoster src={posterUrl(item.poster_path, "w342")} alt={title} />
-  ) : (
-    <Image
-      src={posterUrl(item.poster_path, "w342")}
-      alt={title}
-      fill
-      draggable={false}
-      className="object-cover"
-      sizes={imageSizes}
-    />
-  );
 
   function navigateToDetail() {
     if (hideDialogOpen) return;
@@ -118,7 +84,7 @@ function PosterFrame({
   return (
     <div
       className={cn(
-        "group/poster relative aspect-[2/3] overflow-hidden rounded-lg bg-seerr-card shadow-lg",
+        "media-poster-frame group/poster relative aspect-[2/3] overflow-hidden rounded-lg bg-seerr-card shadow-lg",
         posterClassName,
         navigateOnClick && "cursor-pointer"
       )}
@@ -139,7 +105,7 @@ function PosterFrame({
       aria-label={navigateOnClick ? title : undefined}
       data-nav-href={navigateOnClick ? undefined : href}
     >
-      {posterImage}
+      <PosterImage src={posterUrl(item.poster_path, "w342")} alt={title} />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 transition-opacity group-hover/poster:opacity-100" />
       {rec.inLibrary ? (
         <span className="pointer-events-none absolute top-2 left-2 rounded bg-emerald-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
@@ -189,7 +155,6 @@ function MediaCardContent({
         item={item}
         title={title}
         mediaType={mediaType}
-        useBackgroundPoster
         onHidden={onHidden ?? (() => {})}
         href={href}
         navigateOnClick={false}
@@ -240,12 +205,10 @@ export function MediaCard({
           item={item}
           title={title}
           mediaType={mediaType}
-          useBackgroundPoster={false}
           onHidden={handleHidden}
           href={href}
           navigateOnClick
           posterClassName="w-full"
-          imageSizes="(max-width: 420px) 33vw, 120px"
         />
         <Link href={href} draggable={false} className="mt-1.5 block">
           <p className="text-xs font-medium line-clamp-2 text-foreground/90">{title}</p>
@@ -263,7 +226,6 @@ export function MediaCard({
         item={item}
         title={title}
         mediaType={mediaType}
-        useBackgroundPoster={false}
         onHidden={handleHidden}
         href={href}
         navigateOnClick

@@ -8,11 +8,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { Input } from "@/components/ui/input";
-
 import { Label } from "@/components/ui/label";
 
 import { SlideOver } from "@/components/ui/slide-over";
+
+import { FilterDateInput } from "@/components/discover/FilterDateInput";
 
 import { FilterMultiSelect } from "@/components/discover/FilterMultiSelect";
 
@@ -139,6 +139,10 @@ export function FilterSlideover({
 
   const [excludeKeywords, setExcludeKeywords] = useState<KeywordItem[]>(initialExcludeKeywords);
 
+  const [forceEmptyDates, setForceEmptyDates] = useState(false);
+
+  const [dateResetKey, setDateResetKey] = useState(0);
+
 
 
   useEffect(() => {
@@ -152,6 +156,20 @@ export function FilterSlideover({
     }
 
   }, [open, initialKeywords, initialExcludeKeywords]);
+
+
+
+  useEffect(() => {
+
+    if (!forceEmptyDates) return;
+
+    if (!searchParams.get("dateMin") && !searchParams.get("dateMax")) {
+
+      setForceEmptyDates(false);
+
+    }
+
+  }, [forceEmptyDates, searchParams]);
 
 
 
@@ -303,19 +321,25 @@ export function FilterSlideover({
 
   const clearFilters = useCallback(() => {
 
-    router.push(pathname);
+    setForceEmptyDates(true);
+
+    setDateResetKey((key) => key + 1);
 
     setKeywords([]);
 
     setExcludeKeywords([]);
 
-    onClose();
+    router.push(pathname);
 
-  }, [router, pathname, onClose]);
+  }, [router, pathname]);
 
 
 
   const dateLabel = mediaType === "movie" ? "Release Date" : "First Air Date";
+
+  const dateMinValue = forceEmptyDates ? "" : (searchParams.get("dateMin") ?? "");
+
+  const dateMaxValue = forceEmptyDates ? "" : (searchParams.get("dateMax") ?? "");
 
 
 
@@ -349,15 +373,15 @@ export function FilterSlideover({
 
             <Label className="text-xs text-muted-foreground">From</Label>
 
-            <Input
+            <FilterDateInput
 
-              type="date"
+              key={`date-min-${dateResetKey}`}
 
-              defaultValue={searchParams.get("dateMin") ?? ""}
+              value={dateMinValue}
 
-              onBlur={(e) => updateParams("dateMin", e.target.value)}
+              onCommit={(next) => updateParams("dateMin", next)}
 
-              className={cn("mt-1", ghostField)}
+              className={ghostField}
 
             />
 
@@ -367,15 +391,15 @@ export function FilterSlideover({
 
             <Label className="text-xs text-muted-foreground">To</Label>
 
-            <Input
+            <FilterDateInput
 
-              type="date"
+              key={`date-max-${dateResetKey}`}
 
-              defaultValue={searchParams.get("dateMax") ?? ""}
+              value={dateMaxValue}
 
-              onBlur={(e) => updateParams("dateMax", e.target.value)}
+              onCommit={(next) => updateParams("dateMax", next)}
 
-              className={cn("mt-1", ghostField)}
+              className={ghostField}
 
             />
 
@@ -580,6 +604,7 @@ export function FilterSlideover({
 
       <div className="pb-2 pt-4">
         <Button
+          type="button"
           variant="outline"
           className={cn("w-full", glassBtn)}
 

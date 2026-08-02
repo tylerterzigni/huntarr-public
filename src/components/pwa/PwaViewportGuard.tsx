@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useStandaloneDisplay } from "@/hooks/useStandaloneDisplay";
 
-/** Applies PWA-only document classes for full-screen feel and zoom prevention. */
+/** Applies standalone document class for home-screen chrome (safe areas / overscroll). */
 export function PwaViewportGuard() {
   const { isStandalone } = useStandaloneDisplay();
 

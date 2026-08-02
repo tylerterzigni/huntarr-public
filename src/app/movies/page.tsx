@@ -10,7 +10,7 @@ import {
 import { enrichWithStatus, withoutHiddenItems } from "@/lib/recommendations/filters";
 import { DiscoverFilters } from "@/components/discover/DiscoverFilters";
 import { DiscoverPageBody } from "@/components/discover/DiscoverPageBody";
-import { parseListParam, serializeDiscoverParams } from "@/components/discover/filter-utils";
+import { parseListParam } from "@/components/discover/filter-utils";
 import { buildMovieDiscoverFilters } from "@/lib/discover/build-filters";
 import { mergeMovieGenres } from "@/lib/discover/genres";
 import { DISCOVER_INITIAL_PAGES } from "@/lib/recommendations/constants";
@@ -65,7 +65,6 @@ export default async function MoviesPage({ searchParams }: PageProps) {
     <MainLayout username={session.user.name}>
       <div className="px-4 md:px-8 py-8">
         <DiscoverPageBody
-          key={serializeDiscoverParams(params)}
           title="Discover Movies"
           mediaType="movie"
           initialItems={enriched}

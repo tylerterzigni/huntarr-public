@@ -11,7 +11,7 @@ const browseItemSchema = z
   .passthrough();
 
 const bodySchema = z.object({
-  items: z.array(browseItemSchema).min(1).max(DISCOVER_PERSONALIZE_MAX),
+  items: z.array(browseItemSchema).min(1),
 });
 
 export async function POST(request: Request) {
@@ -32,7 +32,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  const items = parsed.data.items.filter((item) => Number.isFinite(item.id));
+  const items = parsed.data.items
+    .filter((item) => Number.isFinite(item.id))
+    .slice(0, DISCOVER_PERSONALIZE_MAX);
   if (items.length === 0) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }

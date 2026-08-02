@@ -129,7 +129,6 @@ export function PersonalizedBrowseRow({
                 key={item.id}
                 item={item}
                 showReason={personalized}
-                className="animate-in fade-in slide-in-from-left-2 duration-300 fill-mode-both"
                 onHidden={() => {
                   setLocalInitialItems((prev) => prev.filter((entry) => entry.id !== item.id));
                   setItems((prev) => (prev ? prev.filter((entry) => entry.id !== item.id) : prev));

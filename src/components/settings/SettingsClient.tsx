@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +12,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Loader2, Trash2, RefreshCw, Pencil } from "lucide-react";
+import { ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2, RefreshCw, Pencil } from "lucide-react";
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { RecommendationsSettings } from "@/components/settings/RecommendationsSettings";
+import { SyncProgressBar } from "@/components/settings/SyncProgressBar";
+import type { SyncJobSnapshot } from "@/lib/integrations/sync-job-types";
 
 const LIST_PAGE_SIZE = 20;
 
@@ -87,7 +90,11 @@ export function SettingsClient() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [testing, setTesting] = useState<string | null>(null);
+  const [syncJobs, setSyncJobs] = useState<SyncJobSnapshot[]>([]);
+  const announcedSyncJobs = useRef(new Set<string>());
+  const syncStatusHydrated = useRef(false);
   const [aiTestConfirm, setAiTestConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [settingsRes, hideRes, likedRes] = await Promise.all([
@@ -106,6 +113,98 @@ export function SettingsClient() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const formatSyncResultMessage = useCallback((job: SyncJobSnapshot) => {
+    if (job.status === "error") {
+      return job.error || "Sync failed";
+    }
+    const result = job.result;
+    if (!result) return "Sync complete";
+
+    if (job.service === "tautulli" && result.fetched != null) {
+      const breakdown =
+        result.movies != null && result.tv != null
+          ? ` (${result.movies} movies, ${result.tv} TV shows)`
+          : "";
+      return (
+        `Synced ${result.synced ?? 0} titles from ${result.fetched} history entries${breakdown}` +
+        (result.synced === 0 && result.fetched > 0
+          ? " — entries could not be mapped to TMDB (check TMDB API key in General settings)"
+          : "")
+      );
+    }
+
+    if (job.service === "plex") {
+      const watched =
+        result.watchedSynced != null && result.watchedSynced > 0
+          ? ` (${result.watchedSynced} watched titles for Because You Watched)`
+          : "";
+      return `Synced ${result.synced ?? 0} library items${watched}`;
+    }
+
+    return `Synced ${result.synced ?? 0} items`;
+  }, []);
+
+  const refreshSyncJobs = useCallback(async () => {
+    const res = await fetch("/api/sync/status", { cache: "no-store" });
+    if (!res.ok) return [] as SyncJobSnapshot[];
+    const data = await res.json();
+    const jobs = (data.jobs ?? []) as SyncJobSnapshot[];
+    setSyncJobs(jobs);
+
+    // First poll after mount/reload: adopt existing finished jobs silently.
+    if (!syncStatusHydrated.current) {
+      syncStatusHydrated.current = true;
+      for (const job of jobs) {
+        if (job.status !== "running") {
+          announcedSyncJobs.current.add(job.id);
+        }
+      }
+      return jobs;
+    }
+
+    for (const job of jobs) {
+      if (job.status === "running") continue;
+      if (announcedSyncJobs.current.has(job.id)) continue;
+      announcedSyncJobs.current.add(job.id);
+      setMessage(formatSyncResultMessage(job));
+    }
+
+    return jobs;
+  }, [formatSyncResultMessage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    async function poll() {
+      try {
+        const jobs = await refreshSyncJobs();
+        if (cancelled) return;
+        const running = jobs.some((job) => job.status === "running");
+        timer = setTimeout(poll, running ? 400 : 3000);
+      } catch {
+        if (!cancelled) timer = setTimeout(poll, 3000);
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [refreshSyncJobs]);
+
+  const plexSyncJob = useMemo(
+    () => syncJobs.find((job) => job.service === "plex" && job.status === "running") ?? null,
+    [syncJobs]
+  );
+  const tautulliSyncJob = useMemo(
+    () =>
+      syncJobs.find((job) => job.service === "tautulli" && job.status === "running") ?? null,
+    [syncJobs]
+  );
+  const syncBusy = Boolean(plexSyncJob || tautulliSyncJob);
 
   async function saveGeneral(form: FormData) {
     await fetch("/api/settings", {
@@ -221,31 +320,32 @@ export function SettingsClient() {
     await testConnection("ai", id);
   }
 
-  async function syncService(service: string) {
+  async function syncService(service: "plex" | "tautulli") {
     setTesting("sync-" + service);
-    const res = await fetch("/api/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ service }),
-    });
-    const result = await res.json();
-    if (!res.ok) {
-      setMessage(result.error ?? "Sync failed");
-    } else if (service === "tautulli" && result.fetched != null) {
-      const breakdown =
-        result.movies != null && result.tv != null
-          ? ` (${result.movies} movies, ${result.tv} TV shows)`
-          : "";
-      setMessage(
-        `Synced ${result.synced ?? 0} titles from ${result.fetched} history entries${breakdown}` +
-          (result.synced === 0 && result.fetched > 0
-            ? " — entries could not be mapped to TMDB (check TMDB API key in General settings)"
-            : "")
-      );
-    } else {
-      setMessage(`Synced ${result.synced ?? 0} items`);
+    setMessage("");
+
+    try {
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ service }),
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(data.error ?? "Sync failed");
+        return;
+      }
+      if (data.job?.id) {
+        // Avoid double-toasting when the poller later sees completion.
+        // (Still announce when the job finishes.)
+      }
+      await refreshSyncJobs();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setTesting(null);
     }
-    setTesting(null);
   }
 
   async function deleteIntegration(id: string) {
@@ -311,7 +411,23 @@ export function SettingsClient() {
           <TabsTrigger value="liked">Liked List</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="general" className="mt-6">
+        <TabsContent value="general" className="mt-6 space-y-4">
+          <Card>
+            <CardHeader><CardTitle>Account</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Update the password for the account you are signed in with.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setChangePasswordOpen(true)}
+              >
+                <KeyRound className="h-4 w-4" />
+                Change password
+              </Button>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader><CardTitle>General</CardTitle></CardHeader>
             <CardContent>
@@ -366,6 +482,10 @@ export function SettingsClient() {
               </form>
             </CardContent>
           </Card>
+          <ChangePasswordDialog
+            open={changePasswordOpen}
+            onOpenChange={setChangePasswordOpen}
+          />
         </TabsContent>
 
         <TabsContent value="radarr" className="mt-6 space-y-4">
@@ -409,9 +529,27 @@ export function SettingsClient() {
             />
           ))}
           <NewIntegrationForm type="plex" label="Plex" isPlex onSave={(fd) => saveIntegration("plex", fd)} />
-          <Button variant="outline" onClick={() => syncService("plex")}>
-            <RefreshCw className="h-4 w-4 mr-1" /> Sync Plex Library
-          </Button>
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              onClick={() => syncService("plex")}
+              disabled={syncBusy || testing === "sync-plex"}
+            >
+              {plexSyncJob || testing === "sync-plex" ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-1" />
+              )}
+              Sync Plex Library
+            </Button>
+            {plexSyncJob && (
+              <SyncProgressBar
+                current={plexSyncJob.progress.current}
+                total={plexSyncJob.progress.total}
+                message={plexSyncJob.progress.message}
+              />
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             Server URL should be your Plex Media Server (e.g. http://192.168.x.x:32400), not app.plex.tv.
             If the URL is wrong, Huntarr will try to discover your server from the token.
@@ -451,9 +589,27 @@ export function SettingsClient() {
               </form>
             </CardContent>
           </Card>
-          <Button variant="outline" onClick={() => syncService("tautulli")}>
-            <RefreshCw className="h-4 w-4 mr-1" /> Sync Watch History
-          </Button>
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              onClick={() => syncService("tautulli")}
+              disabled={syncBusy || testing === "sync-tautulli"}
+            >
+              {tautulliSyncJob || testing === "sync-tautulli" ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-1" />
+              )}
+              Sync Watch History
+            </Button>
+            {tautulliSyncJob && (
+              <SyncProgressBar
+                current={tautulliSyncJob.progress.current}
+                total={tautulliSyncJob.progress.total}
+                message={tautulliSyncJob.progress.message}
+              />
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="recommendations" className="mt-6">

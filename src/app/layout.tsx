@@ -3,9 +3,13 @@ import { Inter } from "next/font/google";
 import Providers from "@/components/providers/SessionProvider";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { PwaViewportGuard } from "@/components/pwa/PwaViewportGuard";
+import { viewport } from "./viewport";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+
+/** Next only picks up viewport from layout/page — re-export so mobile zoom lock is applied. */
+export { viewport };
 
 export const metadata: Metadata = {
   title: "Huntarr",

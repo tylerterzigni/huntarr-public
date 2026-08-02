@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { NavbarSearch } from "@/components/search/NavbarSearch";
 import { LibraryWatchedToggle } from "@/components/layout/LibraryWatchedToggle";
 import { UserAccountMenu } from "@/components/layout/UserAccountMenu";
-import { dispatchHuntarrRefresh } from "@/lib/pwa/refresh";
 
 const navItems = [
   { href: "/", label: "Home", icon: Film },
@@ -42,10 +41,13 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
   }, [searchParams, pathname, router]);
 
   function handleLogoClick(event: React.MouseEvent<HTMLAnchorElement>) {
-    if (pathname !== "/") return;
+    // Full browser reload — clears client state / in-flight streams safely.
     event.preventDefault();
-    dispatchHuntarrRefresh();
-    router.refresh();
+    if (pathname === "/") {
+      window.location.reload();
+      return;
+    }
+    window.location.assign("/");
   }
 
   return (
@@ -54,7 +56,7 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
         "sticky top-0 z-40 pt-safe",
         isDetailPage
           ? "border-b border-transparent bg-transparent"
-          : "border-b border-gray-300 bg-seerr-bg/95 backdrop-blur"
+          : "border-b border-gray-300 bg-seerr-bg"
       )}
     >
       <div className="flex h-20 items-center justify-between gap-3 px-4 md:px-8">
@@ -67,7 +69,7 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
           <Link
             href="/"
             className="flex shrink-0 items-center"
-            aria-label={pathname === "/" ? "Refresh Huntarr home" : "Huntarr home"}
+            aria-label={pathname === "/" ? "Reload Huntarr" : "Huntarr home"}
             onClick={handleLogoClick}
           >
             <Image

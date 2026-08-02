@@ -270,28 +270,58 @@ export async function getUpcomingTvItems(itemCount = TMDB_PAGE_SIZE) {
   return mergeTmdbPages(pages).map((item) => ({ ...item, media_type: "tv" as const }));
 }
 
-export async function discoverMoviesMultiPage(
+export async function discoverMoviesPageRange(
   filters: Record<string, string> = {},
+  startPage = 1,
   pageCount = DISCOVER_PAGE_COUNT
 ) {
+  const start = Math.max(1, startPage);
+  const count = Math.max(1, pageCount);
   const pages = await Promise.all(
-    Array.from({ length: pageCount }, (_, i) =>
-      discoverMovies({ ...filters, page: String(i + 1) })
+    Array.from({ length: count }, (_, i) =>
+      discoverMovies({ ...filters, page: String(start + i) })
     )
   );
-  return mergeTmdbPages(pages);
+  return {
+    results: mergeTmdbPages(pages),
+    total_pages: pages[0]?.total_pages ?? 1,
+  };
+}
+
+export async function discoverTvPageRange(
+  filters: Record<string, string> = {},
+  startPage = 1,
+  pageCount = DISCOVER_PAGE_COUNT
+) {
+  const start = Math.max(1, startPage);
+  const count = Math.max(1, pageCount);
+  const pages = await Promise.all(
+    Array.from({ length: count }, (_, i) =>
+      discoverTv({ ...filters, page: String(start + i) })
+    )
+  );
+  return {
+    results: mergeTmdbPages(pages),
+    total_pages: pages[0]?.total_pages ?? 1,
+  };
+}
+
+export async function discoverMoviesMultiPage(
+  filters: Record<string, string> = {},
+  pageCount = DISCOVER_PAGE_COUNT,
+  startPage = 1
+) {
+  const { results } = await discoverMoviesPageRange(filters, startPage, pageCount);
+  return results;
 }
 
 export async function discoverTvMultiPage(
   filters: Record<string, string> = {},
-  pageCount = DISCOVER_PAGE_COUNT
+  pageCount = DISCOVER_PAGE_COUNT,
+  startPage = 1
 ) {
-  const pages = await Promise.all(
-    Array.from({ length: pageCount }, (_, i) =>
-      discoverTv({ ...filters, page: String(i + 1) })
-    )
-  );
-  return mergeTmdbPages(pages);
+  const { results } = await discoverTvPageRange(filters, startPage, pageCount);
+  return results;
 }
 
 export async function searchMultiMultiPage(query: string, pageCount = DISCOVER_PAGE_COUNT) {

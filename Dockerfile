@@ -23,8 +23,8 @@ ARG VERSION=0.1.0
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="Huntarr" \
       org.opencontainers.image.description="Huntarr media discovery and request app" \
-      org.opencontainers.image.source="https://github.com/tylerterzigni/Huntarr" \
-      org.opencontainers.image.url="https://github.com/tylerterzigni/Huntarr" \
+      org.opencontainers.image.source="https://github.com/tylerterzigni/huntarr-public" \
+      org.opencontainers.image.url="https://github.com/tylerterzigni/huntarr-public" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
 

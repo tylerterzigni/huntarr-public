@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FilterSlideover } from "@/components/discover/FilterSlideover";
@@ -19,6 +19,12 @@ interface DiscoverFiltersProps {
   initialExcludeKeywords?: KeywordItem[];
 }
 
+/** Survives RSC remounts while the user is still editing filters. */
+const filterPanelOpen: Record<"movie" | "tv", boolean> = {
+  movie: false,
+  tv: false,
+};
+
 export function DiscoverFilters({
   genres,
   mediaType,
@@ -26,8 +32,12 @@ export function DiscoverFilters({
   initialExcludeKeywords = [],
 }: DiscoverFiltersProps) {
   const searchParams = useSearchParams();
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(() => filterPanelOpen[mediaType]);
   const activeCount = countActiveFilters(searchParams, mediaType);
+
+  useEffect(() => {
+    filterPanelOpen[mediaType] = showFilters;
+  }, [showFilters, mediaType]);
 
   return (
     <>

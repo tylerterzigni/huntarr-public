@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,26 +13,72 @@ interface SlideOverProps {
   children: React.ReactNode;
 }
 
+/**
+ * Locks document scroll while open (needed on iOS/PWA where overflow:hidden alone
+ * still lets the page behind a sheet scroll).
+ */
+function useBodyScrollLock(locked: boolean) {
+  useEffect(() => {
+    if (!locked) return;
+
+    const { body, documentElement } = document;
+    const scrollY = window.scrollY;
+    const previous = {
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyLeft: body.style.left,
+      bodyRight: body.style.right,
+      bodyWidth: body.style.width,
+      bodyPaddingRight: body.style.paddingRight,
+      htmlOverflow: documentElement.style.overflow,
+      htmlOverscroll: documentElement.style.overscrollBehavior,
+    };
+
+    const scrollbarGap = window.innerWidth - documentElement.clientWidth;
+
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+    if (scrollbarGap > 0) {
+      body.style.paddingRight = `${scrollbarGap}px`;
+    }
+    documentElement.style.overflow = "hidden";
+    documentElement.style.overscrollBehavior = "none";
+
+    return () => {
+      body.style.overflow = previous.bodyOverflow;
+      body.style.position = previous.bodyPosition;
+      body.style.top = previous.bodyTop;
+      body.style.left = previous.bodyLeft;
+      body.style.right = previous.bodyRight;
+      body.style.width = previous.bodyWidth;
+      body.style.paddingRight = previous.bodyPaddingRight;
+      documentElement.style.overflow = previous.htmlOverflow;
+      documentElement.style.overscrollBehavior = previous.htmlOverscroll;
+      window.scrollTo(0, scrollY);
+    };
+  }, [locked]);
+}
+
 export function SlideOver({ open, title, subText, onClose, children }: SlideOverProps) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    if (open) {
-      setVisible(true);
-      document.body.style.overflow = "hidden";
-    } else {
-      setVisible(false);
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
+    setVisible(open);
   }, [open]);
+
+  useBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;
@@ -43,10 +89,34 @@ export function SlideOver({ open, title, subText, onClose, children }: SlideOver
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  // Block touch scroll chaining from the backdrop / chrome into the page behind.
+  useEffect(() => {
+    if (!open) return;
+
+    function onTouchMove(event: TouchEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        event.preventDefault();
+        return;
+      }
+
+      if (target.closest("[data-allow-touch-scroll]")) {
+        // Filters list (and nested popovers like the date picker) may scroll.
+        return;
+      }
+
+      // Header / backdrop / panel chrome: never scroll the document underneath.
+      event.preventDefault();
+    }
+
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => document.removeEventListener("touchmove", onTouchMove);
+  }, [open]);
+
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-50 flex justify-end" data-no-pull-refresh>
       <button
         type="button"
         aria-label="Close filters"
@@ -57,13 +127,14 @@ export function SlideOver({ open, title, subText, onClose, children }: SlideOver
         onClick={onClose}
       />
       <div
+        ref={panelRef}
         className={cn(
-          "relative flex h-full w-full max-w-lg flex-col border-l border-gray-300/70 bg-white/40 backdrop-blur-xl shadow-none transition-transform duration-300 ease-in-out sm:max-w-xl",
+          "relative flex h-full max-h-[100dvh] w-full max-w-lg flex-col border-l border-gray-300/70 bg-white/40 backdrop-blur-xl shadow-none transition-transform duration-300 ease-in-out sm:max-w-xl",
           visible ? "translate-x-0" : "translate-x-full"
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-gray-300/70 px-6 pb-5 pt-safe">
+        <div className="flex shrink-0 items-start justify-between border-b border-gray-300/70 px-6 pb-5 pt-safe">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
             {subText && <p className="mt-1 text-sm text-muted-foreground">{subText}</p>}
@@ -76,7 +147,14 @@ export function SlideOver({ open, title, subText, onClose, children }: SlideOver
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-4 pb-safe">{children}</div>
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4 pb-safe [-webkit-overflow-scrolling:touch]"
+          data-allow-touch-scroll
+          data-no-pull-refresh
+        >
+          {children}
+        </div>
       </div>
     </div>,
     document.body

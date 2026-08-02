@@ -4,6 +4,12 @@ export const HOME_ROW_LIMIT = 40;
 /** TMDB discover pages loaded on first paint (~20 results each → ~40 titles). */
 export const DISCOVER_INITIAL_PAGES = 2;
 
+/** TMDB pages fetched per rolling client batch (~20 results each → up to ~200 titles). */
+export const DISCOVER_ROLL_PAGES = 10;
+
+/** Max TMDB pages auto-loaded into the discover grid (~20 results each → ~1000 titles). */
+export const DISCOVER_MAX_PAGES = 50;
+
 /** Max discover grid items sent to the personalize-browse API (multi-page + load more). */
 export const DISCOVER_PERSONALIZE_MAX = 150;
 

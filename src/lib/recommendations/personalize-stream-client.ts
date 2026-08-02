@@ -1,4 +1,5 @@
 import type { PersonalizeBrowseStreamEvent } from "@/lib/recommendations/engine";
+import { DISCOVER_PERSONALIZE_MAX } from "@/lib/recommendations/constants";
 import type { RecommendationItem } from "@/types";
 
 export type PersonalizeStreamCallbacks = {
@@ -26,9 +27,13 @@ export async function streamPersonalizeBrowse(
   items: RecommendationItem[],
   { onEvent, onError }: PersonalizeStreamCallbacks
 ): Promise<void> {
-  const payload = items.filter((item) => Number.isFinite(item.id));
+  // Discover auto-rolls far past the API cap; keep popularity order (list order) and trim.
+  const payload = items
+    .map((item) => ({ ...item, id: Number(item.id) }))
+    .filter((item) => Number.isFinite(item.id) && item.id > 0)
+    .slice(0, DISCOVER_PERSONALIZE_MAX);
   if (payload.length === 0) {
-    throw new Error("No items to personalize");
+    throw new Error("No results to personalize.");
   }
 
   const res = await fetch("/api/recommendations/personalize-browse/stream", {

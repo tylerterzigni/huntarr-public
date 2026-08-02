@@ -144,10 +144,15 @@ export function ForYouRow() {
   }, [connect, stopStagger]);
 
   useEffect(() => {
-    const onRefresh = () => connect(true);
+    const onRefresh = () => {
+      // Avoid stacking an expensive refresh=1 reconnect on an in-flight stream —
+      // that double load is a common iOS WebKit OOM trigger with pull-to-refresh.
+      if (!done && loading) return;
+      connect(true);
+    };
     window.addEventListener(HUNTARR_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(HUNTARR_REFRESH_EVENT, onRefresh);
-  }, [connect]);
+  }, [connect, done, loading]);
 
   useEffect(() => {
     function onTitleHidden(event: Event) {
@@ -169,7 +174,11 @@ export function ForYouRow() {
   if (done && visibleItems.length === 0) return null;
 
   return (
-    <section className="mb-5 md:mb-10" aria-busy={loading && !done}>
+    <section
+      className="mb-5 md:mb-10"
+      aria-busy={loading && !done}
+      data-huntarr-loading={loading && !done ? "true" : undefined}
+    >
       <div className="mb-2 px-4 md:mb-4 md:px-8">
         <div className="flex items-center gap-2">
           <h2 className="text-xl font-semibold text-gray-900">For You</h2>
@@ -203,7 +212,6 @@ export function ForYouRow() {
                 <MediaCard
                   key={`${item.id}-${rowEpoch}`}
                   item={item}
-                  className="animate-in fade-in slide-in-from-left-2 duration-300 fill-mode-both"
                   onHidden={() => {
                     setItems((prev) => prev.filter((entry) => entry.id !== item.id));
                     setRevealedCount((prev) => Math.max(0, prev - 1));

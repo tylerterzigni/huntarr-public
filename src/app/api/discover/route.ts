@@ -3,8 +3,8 @@ import { auth } from "@/lib/auth";
 import {
   discoverMovies,
   discoverTv,
-  discoverMoviesMultiPage,
-  discoverTvMultiPage,
+  discoverMoviesPageRange,
+  discoverTvPageRange,
 } from "@/lib/integrations/tmdb/client";
 import { buildMovieDiscoverFilters, buildTvDiscoverFilters } from "@/lib/discover/build-filters";
 import { enrichWithStatus, withoutHiddenItems } from "@/lib/recommendations/filters";
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   }
 
   const params = Object.fromEntries(
-    [...searchParams.entries()].filter(([key]) => !["type", "page", "pages"].includes(key))
+    [...searchParams.entries()].filter(([key]) => !["type", "page", "pages", "startPage"].includes(key))
   );
   const filters = type === "movie" ? buildMovieDiscoverFilters(params) : buildTvDiscoverFilters(params);
   const pages = searchParams.get("pages");
@@ -33,23 +33,22 @@ export async function GET(request: Request) {
   try {
     if (pages) {
       const pageCount = Math.min(Math.max(Number(pages) || 5, 1), 10);
-      const firstPage =
+      const startPage = Math.max(Number(searchParams.get("startPage")) || 1, 1);
+      const ranged =
         type === "movie"
-          ? await discoverMovies({ ...filters, page: "1" })
-          : await discoverTv({ ...filters, page: "1" });
-      const results =
-        type === "movie"
-          ? await discoverMoviesMultiPage(filters, pageCount)
-          : await discoverTvMultiPage(filters, pageCount);
+          ? await discoverMoviesPageRange(filters, startPage, pageCount)
+          : await discoverTvPageRange(filters, startPage, pageCount);
       const enriched = withoutHiddenItems(
-        await enrichWithStatus(results, session.user.id)
+        await enrichWithStatus(ranged.results, session.user.id)
       );
+      const loadedThrough = Math.min(startPage + pageCount - 1, ranged.total_pages);
 
       return NextResponse.json({
         results: enriched,
         count: enriched.length,
-        total_pages: firstPage.total_pages,
-        page: 1,
+        total_pages: ranged.total_pages,
+        page: loadedThrough,
+        startPage,
       });
     }
 

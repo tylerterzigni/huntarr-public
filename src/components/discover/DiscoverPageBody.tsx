@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { MediaCard } from "@/components/media/MediaCard";
 import { PosterSkeleton } from "@/components/media/PosterSkeleton";
@@ -15,7 +15,15 @@ import {
   matchesHiddenTitle,
   type TitleHiddenDetail,
 } from "@/lib/hide-list/client";
+import { HUNTARR_REFRESH_EVENT } from "@/lib/pwa/refresh";
+import {
+  DISCOVER_MAX_PAGES,
+  DISCOVER_ROLL_PAGES,
+} from "@/lib/recommendations/constants";
 import type { MediaType, RecommendationItem } from "@/types";
+
+/** Keep mobile discover grids smaller — large decoded poster sets OOM WebKit on PTR. */
+const DISCOVER_MAX_PAGES_MOBILE = 20;
 
 interface DiscoverPageBodyProps {
   title: string;
@@ -38,11 +46,40 @@ export function DiscoverPageBody({
   filters,
 }: DiscoverPageBodyProps) {
   const { filterVisibleItems, hideLibraryAndWatched } = useLibraryWatchedVisibility();
+  const filterKey = serializeDiscoverParams(filterParams);
   const [discoverItems, setDiscoverItems] = useState(initialItems);
   const [page, setPage] = useState(initialPagesLoaded);
   const [totalPages, setTotalPages] = useState(initialTotalPages);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState("");
+  const [retryToken, setRetryToken] = useState(0);
+  /** Person clicked before any titles arrived — wait until the roll has items. */
+  const [personalizeWhenReady, setPersonalizeWhenReady] = useState(false);
+  const rollGenerationRef = useRef(0);
+  const personalizedRef = useRef(false);
+  /** Independent of React state so roll completions cannot race a pending click. */
+  const personalizeWhenReadyRef = useRef(false);
+  /** Re-personalize with the full list once the TMDB roll finishes. */
+  const refreshPersonalizeOnRollCompleteRef = useRef(false);
+  const discoverItemsRef = useRef(initialItems);
+  const loadingMoreRef = useRef(false);
+  const hasMoreRef = useRef(false);
+  const initialItemsRef = useRef(initialItems);
+  const initialPagesLoadedRef = useRef(initialPagesLoaded);
+  const initialTotalPagesRef = useRef(initialTotalPages);
+  const [maxPages, setMaxPages] = useState(DISCOVER_MAX_PAGES);
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      setMaxPages(DISCOVER_MAX_PAGES_MOBILE);
+    }
+  }, []);
+
+  initialItemsRef.current = initialItems;
+  initialPagesLoadedRef.current = initialPagesLoaded;
+  initialTotalPagesRef.current = initialTotalPages;
+  discoverItemsRef.current = discoverItems;
+  loadingMoreRef.current = loadingMore;
 
   const {
     personalized,
@@ -55,9 +92,46 @@ export function DiscoverPageBody({
     run: runPersonalize,
     activateCached,
     deactivate,
+    reset: resetPersonalize,
     setItems: setPersonalizedItems,
     setError: setPersonalizeError,
   } = usePersonalizeBrowseStream({ mode: "discover" });
+
+  personalizedRef.current = personalized;
+
+  const clearPersonalizeWhenReady = useCallback(() => {
+    personalizeWhenReadyRef.current = false;
+    setPersonalizeWhenReady(false);
+  }, []);
+
+  const resetPersonalizeIntent = useCallback(() => {
+    clearPersonalizeWhenReady();
+    refreshPersonalizeOnRollCompleteRef.current = false;
+    resetPersonalize();
+  }, [clearPersonalizeWhenReady, resetPersonalize]);
+
+  const resetDiscoverGrid = useCallback(() => {
+    rollGenerationRef.current += 1;
+    setDiscoverItems(initialItemsRef.current);
+    setPage(initialPagesLoadedRef.current);
+    setTotalPages(initialTotalPagesRef.current);
+    setLoadMoreError("");
+    setLoadingMore(false);
+    resetPersonalizeIntent();
+  }, [resetPersonalizeIntent]);
+
+  // Sync grid when filters change without remounting (keeps filters sidebar open).
+  useEffect(() => {
+    resetDiscoverGrid();
+  }, [filterKey, resetDiscoverGrid]);
+
+  // Pull-to-refresh / logo refresh: abort the auto-roll and drop back to SSR items
+  // so we do not keep growing the grid while router.refresh() reloads the page.
+  useEffect(() => {
+    const onRefresh = () => resetDiscoverGrid();
+    window.addEventListener(HUNTARR_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(HUNTARR_REFRESH_EVENT, onRefresh);
+  }, [resetDiscoverGrid]);
 
   useEffect(() => {
     function onTitleHidden(event: Event) {
@@ -72,7 +146,6 @@ export function DiscoverPageBody({
     return () => window.removeEventListener(HUNTARR_TITLE_HIDDEN_EVENT, onTitleHidden);
   }, [setPersonalizedItems]);
 
-  const queryString = serializeDiscoverParams(filterParams);
   const sortedItems = useMemo(
     () => (personalized ? (personalizedItems ?? []) : discoverItems),
     [personalized, personalizedItems, discoverItems]
@@ -83,6 +156,10 @@ export function DiscoverPageBody({
   );
 
   const isRollingOut = personalized && personalizeInitializing;
+  const pageCap = Math.min(totalPages, maxPages);
+  const hasMore = page < pageCap;
+  hasMoreRef.current = hasMore;
+  const stillLoadingDiscover = hasMore || loadingMore;
   const slotTotal = isRollingOut
     ? Math.max(discoverItems.length, visibleSortedItems.length)
     : visibleSortedItems.length;
@@ -91,9 +168,31 @@ export function DiscoverPageBody({
     : visibleSortedItems;
   const skeletonCount = isRollingOut ? Math.max(0, slotTotal - revealedCount) : 0;
 
+  const runPersonalizeSafe = useCallback(
+    async (items: RecommendationItem[]) => {
+      if (items.length === 0) return false;
+      setPersonalizeError("");
+      try {
+        await runPersonalize(items);
+        return true;
+      } catch {
+        // Error surfaced via personalizeError
+        return false;
+      }
+    },
+    [runPersonalize, setPersonalizeError]
+  );
+
   const togglePersonalized = useCallback(async () => {
     if (personalized) {
+      refreshPersonalizeOnRollCompleteRef.current = false;
       deactivate();
+      return;
+    }
+
+    if (personalizeWhenReadyRef.current) {
+      clearPersonalizeWhenReady();
+      refreshPersonalizeOnRollCompleteRef.current = false;
       return;
     }
 
@@ -102,77 +201,187 @@ export function DiscoverPageBody({
       return;
     }
 
-    try {
-      await runPersonalize(discoverItems);
-    } catch {
-      // Error surfaced via personalizeError
-    }
-  }, [personalized, personalizedItems, discoverItems, runPersonalize, deactivate, activateCached]);
+    const currentItems = discoverItemsRef.current;
+    const loading = hasMoreRef.current || loadingMoreRef.current;
 
-  const loadMore = useCallback(async () => {
-    const nextPage = page + 1;
-    if (nextPage > totalPages || loadingMore) return;
-
-    setLoadingMore(true);
-    setLoadMoreError("");
-
-    const params = new URLSearchParams(queryString);
-    params.set("type", mediaType);
-    params.set("page", String(nextPage));
-
-    try {
-      const res = await fetch(`/api/discover?${params.toString()}`, { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load more");
-
-      let mergedDiscover: RecommendationItem[] = [];
-      setDiscoverItems((prev) => {
-        const seen = new Set(prev.map((item) => item.id));
-        const nextItems = (data.results ?? []).filter(
-          (item: RecommendationItem) => !seen.has(item.id)
-        );
-        mergedDiscover = [...prev, ...nextItems];
-        return mergedDiscover;
-      });
-
-      setPage(nextPage);
-      setTotalPages(data.total_pages ?? totalPages);
-
-      if (personalized) {
-        setPersonalizeError("");
-        try {
-          await runPersonalize(mergedDiscover);
-        } catch (err) {
-          setPersonalizeError(
-            err instanceof Error ? err.message : "Failed to personalize results"
-          );
-        }
+    // Titles already on screen — personalize them now. If the roll is still going,
+    // refresh once with the full list when it finishes.
+    if (currentItems.length > 0) {
+      if (loading) {
+        refreshPersonalizeOnRollCompleteRef.current = true;
       }
-    } catch (err) {
-      setLoadMoreError(err instanceof Error ? err.message : "Failed to load more");
-    } finally {
-      setLoadingMore(false);
+      await runPersonalizeSafe(currentItems);
+      return;
     }
+
+    // Nothing loaded yet but TMDB pages are still rolling in — wait for the first batch.
+    if (loading) {
+      setPersonalizeError("");
+      personalizeWhenReadyRef.current = true;
+      refreshPersonalizeOnRollCompleteRef.current = true;
+      setPersonalizeWhenReady(true);
+      return;
+    }
+
+    setPersonalizeError("No results to personalize.");
   }, [
-    page,
-    totalPages,
-    loadingMore,
-    queryString,
-    mediaType,
     personalized,
-    runPersonalize,
+    personalizedItems,
+    runPersonalizeSafe,
+    deactivate,
+    activateCached,
+    clearPersonalizeWhenReady,
     setPersonalizeError,
   ]);
 
-  if (discoverItems.length === 0) {
+  // Auto-roll remaining TMDB pages in large multi-page batches until complete.
+  useEffect(() => {
+    if (!hasMore || loadMoreError) return;
+
+    const generation = rollGenerationRef.current;
+    const abort = new AbortController();
+    let cancelled = false;
+
+    async function rollNextBatch() {
+      const startPage = page + 1;
+      if (startPage > pageCap) return;
+
+      setLoadingMore(true);
+
+      const batchSize = Math.min(DISCOVER_ROLL_PAGES, pageCap - page);
+      const params = new URLSearchParams(filterKey);
+      params.set("type", mediaType);
+      params.set("startPage", String(startPage));
+      params.set("pages", String(batchSize));
+
+      try {
+        const res = await fetch(`/api/discover?${params.toString()}`, {
+          cache: "no-store",
+          signal: abort.signal,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to load more");
+        if (cancelled || generation !== rollGenerationRef.current) return;
+
+        let mergedDiscover: RecommendationItem[] = [];
+        setDiscoverItems((prev) => {
+          const seen = new Set(prev.map((item) => item.id));
+          const nextItems = (data.results ?? []).filter(
+            (item: RecommendationItem) => !seen.has(item.id)
+          );
+          mergedDiscover = [...prev, ...nextItems];
+          return mergedDiscover;
+        });
+        discoverItemsRef.current = mergedDiscover;
+
+        const loadedThrough = Number(data.page) || Math.min(page + batchSize, pageCap);
+        const nextTotal = data.total_pages ?? totalPages;
+        setPage(loadedThrough);
+        setTotalPages(nextTotal);
+
+        const done = loadedThrough >= pageCap || loadedThrough >= nextTotal;
+        const wantsPersonalize =
+          personalizedRef.current ||
+          personalizeWhenReadyRef.current ||
+          refreshPersonalizeOnRollCompleteRef.current;
+
+        // First titles arrived while Person was waiting on an empty grid.
+        if (
+          !done &&
+          personalizeWhenReadyRef.current &&
+          mergedDiscover.length > 0 &&
+          !personalizedRef.current
+        ) {
+          clearPersonalizeWhenReady();
+          await runPersonalizeSafe(mergedDiscover);
+        }
+
+        if (done && wantsPersonalize && mergedDiscover.length > 0) {
+          clearPersonalizeWhenReady();
+          refreshPersonalizeOnRollCompleteRef.current = false;
+          await runPersonalizeSafe(mergedDiscover);
+        }
+      } catch (err) {
+        if (abort.signal.aborted) return;
+        if (!cancelled && generation === rollGenerationRef.current) {
+          setLoadMoreError(err instanceof Error ? err.message : "Failed to load more");
+        }
+      } finally {
+        if (!cancelled && generation === rollGenerationRef.current) {
+          setLoadingMore(false);
+        }
+      }
+    }
+
+    void rollNextBatch();
+
+    return () => {
+      cancelled = true;
+      abort.abort();
+    };
+  }, [
+    hasMore,
+    page,
+    pageCap,
+    totalPages,
+    filterKey,
+    mediaType,
+    loadMoreError,
+    retryToken,
+    runPersonalizeSafe,
+    clearPersonalizeWhenReady,
+  ]);
+
+  // Pending Person click with an empty grid: start once titles exist, or once the roll stops.
+  useEffect(() => {
+    if (!personalizeWhenReadyRef.current) {
+      if (personalizeWhenReady) setPersonalizeWhenReady(false);
+      return;
+    }
+    if (personalized || personalizeLoading) return;
+
+    if (discoverItems.length > 0) {
+      clearPersonalizeWhenReady();
+      // Still rolling — refresh again when the full set is in.
+      if (stillLoadingDiscover) {
+        refreshPersonalizeOnRollCompleteRef.current = true;
+      }
+      void runPersonalizeSafe(discoverItems);
+      return;
+    }
+
+    // Still loading empty pages — keep waiting. Never error mid-roll.
+    if (stillLoadingDiscover) return;
+
+    clearPersonalizeWhenReady();
+    refreshPersonalizeOnRollCompleteRef.current = false;
+    setPersonalizeError(
+      loadMoreError ? "Failed to load results to personalize." : "No results to personalize."
+    );
+  }, [
+    personalizeWhenReady,
+    discoverItems,
+    stillLoadingDiscover,
+    personalized,
+    personalizeLoading,
+    loadMoreError,
+    runPersonalizeSafe,
+    clearPersonalizeWhenReady,
+    setPersonalizeError,
+  ]);
+
+  const personButtonActive = personalized || personalizeWhenReady;
+  const personButtonLoading = personalizeLoading || personalizeWhenReady;
+
+  if (discoverItems.length === 0 && !loadingMore) {
     return (
-      <>
+      <div data-huntarr-loading={stillLoadingDiscover ? "true" : undefined}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold">{title}</h1>
             <PersonalizeSortButton
-              active={personalized}
-              loading={personalizeLoading}
+              active={personButtonActive}
+              loading={personButtonLoading}
               onToggle={togglePersonalized}
               defaultOrderLabel="popularity"
             />
@@ -180,18 +389,19 @@ export function DiscoverPageBody({
           {filters}
         </div>
         <p className="mt-6 text-muted-foreground">No results match the selected filters.</p>
-      </>
+        {personalizeError && <p className="mt-2 text-red-400 text-sm">{personalizeError}</p>}
+      </div>
     );
   }
 
   return (
-    <>
+    <div data-huntarr-loading={stillLoadingDiscover || personalizeLoading ? "true" : undefined}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-bold">{title}</h1>
           <PersonalizeSortButton
-            active={personalized}
-            loading={personalizeLoading}
+            active={personButtonActive}
+            loading={personButtonLoading}
             onToggle={togglePersonalized}
             defaultOrderLabel="popularity"
           />
@@ -201,11 +411,14 @@ export function DiscoverPageBody({
 
       <div className="space-y-6">
         <p className="text-sm text-muted-foreground">
-          {personalized
-            ? isRollingOut
-              ? `Personalizing ${mediaType === "movie" ? "movies" : "TV shows"} for you…`
-              : `Showing ${revealedItems.length} ${mediaType === "movie" ? "movies" : "TV shows"} sorted by your taste`
-            : `Showing ${revealedItems.length} ${mediaType === "movie" ? "movies" : "TV shows"}`}
+          {personalizeWhenReady
+            ? "Waiting for results before sorting by your taste…"
+            : personalized
+              ? isRollingOut
+                ? `Personalizing ${mediaType === "movie" ? "movies" : "TV shows"} for you…`
+                : `Showing ${revealedItems.length} ${mediaType === "movie" ? "movies" : "TV shows"} sorted by your taste`
+              : `Showing ${revealedItems.length} ${mediaType === "movie" ? "movies" : "TV shows"}`}
+          {stillLoadingDiscover && !personalizeWhenReady ? " · loading more…" : ""}
           {hideLibraryAndWatched && sortedItems.length > visibleSortedItems.length
             ? ` (${sortedItems.length - visibleSortedItems.length} in library or watched hidden)`
             : ""}
@@ -231,7 +444,6 @@ export function DiscoverPageBody({
               key={item.id}
               item={item}
               layout="grid"
-              className="animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both"
               showReason={personalized}
               onHidden={() => {
                 setDiscoverItems((prev) => prev.filter((entry) => entry.id !== item.id));
@@ -244,23 +456,34 @@ export function DiscoverPageBody({
           {Array.from({ length: skeletonCount }).map((_, index) => (
             <PosterSkeleton key={`personalize-skeleton-${index}`} layout="grid" />
           ))}
+          {loadingMore &&
+            !isRollingOut &&
+            Array.from({ length: 10 }).map((_, index) => (
+              <PosterSkeleton key={`roll-skeleton-${index}`} layout="grid" />
+            ))}
         </div>
-        {loadMoreError && <p className="text-red-400 text-sm">{loadMoreError}</p>}
-        {page < totalPages && (
-          <div className="flex justify-center">
-            <Button variant="outline" onClick={loadMore} disabled={loadingMore || personalizeLoading}>
-              {loadingMore ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                "Load more"
-              )}
+        {loadMoreError && (
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-red-400 text-sm">{loadMoreError}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setLoadMoreError("");
+                setRetryToken((token) => token + 1);
+              }}
+            >
+              Retry
             </Button>
           </div>
         )}
+        {loadingMore && !loadMoreError && (
+          <div className="flex justify-center items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading more results…
+          </div>
+        )}
       </div>
-    </>
+    </div>
   );
 }

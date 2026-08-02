@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const query = searchParams.get("q") ?? "";
 
   try {
-    const results = await searchWatchHistory(session.user.id, query);
+    const results = await searchWatchHistory(session.user.id, query, 40);
     return NextResponse.json({ results });
   } catch (err) {
     return NextResponse.json(

@@ -3,20 +3,20 @@
 # Requires --dump and typing RESTORE. Never part of the default update path.
 # Usage:
 #   ./scripts/restore-db.sh --dump backups/huntarr-YYYYMMDD-HHMMSS.sql.gz
-#   ./scripts/restore-db.sh --dump FILE --container huntarr-db --env MediaServer
+#   ./scripts/restore-db.sh --dump FILE --container huntarr-db --env Remote
 set -euo pipefail
 
 CONTAINER="${HUNTARR_DB_CONTAINER:-huntarr-db}"
 DUMP_FILE=""
-ENVIRONMENT="Windows"
+ENVIRONMENT="Local"
 ALLOW_CROSS=0
 
 usage() {
   cat <<'EOF'
-Usage: restore-db.sh --dump PATH [--container huntarr-db] [--env Windows|MediaServer] [--allow-cross-environment]
+Usage: restore-db.sh --dump PATH [--container huntarr-db] [--env Local|Remote] [--allow-cross-environment]
 
 Restore overwrites the target database. Type RESTORE at the prompt to continue.
-Windows Docker and MediaServer databases are strictly separate.
+Keep separate Huntarr databases per machine; do not mix dumps casually.
 EOF
 }
 
@@ -64,16 +64,16 @@ fi
 DUMP_FILE="$(cd "$(dirname "$DUMP_FILE")" && pwd)/$(basename "$DUMP_FILE")"
 LOWER="$(printf '%s' "$DUMP_FILE" | tr '[:upper:]' '[:lower:]')"
 
-if [[ "$ENVIRONMENT" == "MediaServer" && "$ALLOW_CROSS" -eq 0 ]]; then
-  if [[ "$LOWER" == *onedrive* || "$LOWER" == *"/projects/huntarr"* || "$LOWER" == *windows* ]]; then
-    echo "Refusing Windows-looking dump onto MediaServer without --allow-cross-environment." >&2
+if [[ "$ENVIRONMENT" == "Remote" && "$ALLOW_CROSS" -eq 0 ]]; then
+  if [[ "$LOWER" == *local* || "$LOWER" == *laptop* || "$LOWER" == *desktop* || "$LOWER" == *"/projects/huntarr"* ]]; then
+    echo "Refusing local-looking dump onto Remote without --allow-cross-environment." >&2
     exit 1
   fi
 fi
 
-if [[ "$ENVIRONMENT" == "Windows" && "$ALLOW_CROSS" -eq 0 ]]; then
-  if [[ "$LOWER" == *mediaserver* || "$LOWER" == *"/mnt/md0/"* ]]; then
-    echo "Refusing MediaServer-looking dump onto Windows without --allow-cross-environment." >&2
+if [[ "$ENVIRONMENT" == "Local" && "$ALLOW_CROSS" -eq 0 ]]; then
+  if [[ "$LOWER" == *remote* || "$LOWER" == *"/data/postgres"* || "$LOWER" == *nas* || "$LOWER" == *homelab* ]]; then
+    echo "Refusing remote-looking dump onto Local without --allow-cross-environment." >&2
     exit 1
   fi
 fi

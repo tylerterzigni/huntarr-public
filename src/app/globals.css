@@ -41,6 +41,8 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    /* Blocks double-tap zoom in mobile browser and standalone PWA */
+    touch-action: manipulation;
   }
   body {
     @apply bg-background text-foreground;
@@ -48,18 +50,17 @@
   }
 }
 
-html.pwa-standalone {
-  touch-action: manipulation;
+/* iOS Safari zooms focused inputs under 16px — keep form controls readable on phone */
+@media (max-width: 1023px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 html.pwa-standalone body {
   overscroll-behavior-y: none;
-}
-
-html.pwa-standalone input,
-html.pwa-standalone select,
-html.pwa-standalone textarea {
-  font-size: 16px;
 }
 
 html.pwa-standalone .horizontal-scroll-row {
@@ -88,7 +89,7 @@ html.pwa-standalone .horizontal-scroll-row {
 }
 
 .horizontal-scroll-row {
-  touch-action: pan-y pinch-zoom;
+  touch-action: pan-x pan-y;
 }
 
 .horizontal-scroll-row .scroll-row-item {
@@ -119,8 +120,14 @@ html.pwa-standalone .horizontal-scroll-row {
 /* Seerr-style mobile bottom bars: icon row + home-indicator gap below */
 @layer components {
   .mobile-bottom-dock {
-    @apply border-t border-gray-300/70 bg-seerr-bg/95 backdrop-blur-md;
+    @apply border-t border-gray-300/70 bg-seerr-bg;
     padding-bottom: var(--mobile-bottom-inset);
+  }
+
+  /* Own compositor layer so posters do not stay half-painted under sticky UI. */
+  .media-poster-frame {
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
 
   .mobile-bottom-dock-nav {

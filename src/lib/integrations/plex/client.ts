@@ -18,6 +18,8 @@ interface PlexMetadata {
   Guid?: { id: string } | Array<{ id: string }>;
   leafCount?: number;
   viewedLeafCount?: number;
+  viewCount?: number | string;
+  lastViewedAt?: number | string;
 }
 
 interface PlexConnection {
@@ -249,27 +251,66 @@ async function enrichGuidCandidates(
   return guidMap;
 }
 
-export async function fetchPlexLibrary(instance: DecryptedInstance<PlexCredentials>) {
+export type PlexLibraryItem = {
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  plexGuid: string;
+  plexRatingKey: string;
+  viewCount: number;
+  lastViewedAt: Date | null;
+  leafCount: number;
+  viewedLeafCount: number;
+};
+
+function readPlexInt(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function readPlexUnixDate(value: unknown): Date | null {
+  const seconds = readPlexInt(value);
+  if (seconds == null || seconds <= 0) return null;
+  return new Date(seconds * 1000);
+}
+
+export type PlexLibraryFetchProgress = {
+  sectionIndex: number;
+  sectionTotal: number;
+  sectionTitle: string;
+  resolvedItems: number;
+};
+
+export async function fetchPlexLibrary(
+  instance: DecryptedInstance<PlexCredentials>,
+  onProgress?: (progress: PlexLibraryFetchProgress) => void
+) {
   const baseUrl = await resolvePlexBaseUrl(instance);
   const sectionsData = await plexFetchJson<{ MediaContainer?: { Directory?: PlexSection | PlexSection[] } }>(
     `${baseUrl}/library/sections`,
     instance.credentials.token
   );
 
-  const sections = asArray(sectionsData.MediaContainer?.Directory);
-  const items: Array<{
-    tmdbId: number;
-    mediaType: "movie" | "tv";
-    title: string;
-    plexGuid: string;
-    plexRatingKey: string;
-  }> = [];
+  const sections = asArray(sectionsData.MediaContainer?.Directory).filter(
+    (section) => section.type === "movie" || section.type === "show"
+  );
+  const items: PlexLibraryItem[] = [];
   const seen = new Set<string>();
 
-  for (const section of sections) {
-    if (section.type !== "movie" && section.type !== "show") continue;
-
+  for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+    const section = sections[sectionIndex];
     const mediaType: "movie" | "tv" = section.type === "show" ? "tv" : "movie";
+    onProgress?.({
+      sectionIndex,
+      sectionTotal: sections.length,
+      sectionTitle: section.title ?? section.key,
+      resolvedItems: items.length,
+    });
+
     const metadata = await fetchSectionMetadata(baseUrl, instance.credentials.token, section.key);
     const guidMap = await enrichGuidCandidates(baseUrl, instance.credentials.token, metadata);
 
@@ -282,14 +323,31 @@ export async function fetchPlexLibrary(instance: DecryptedInstance<PlexCredentia
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
 
+      const leafCount = readPlexInt(item.leafCount) ?? 0;
+      const viewedLeafCount = readPlexInt(item.viewedLeafCount) ?? 0;
+      const viewCount = readPlexInt(item.viewCount) ?? 0;
+
       items.push({
         tmdbId: parsed.tmdbId,
         mediaType: parsed.mediaType,
         title: item.title,
         plexGuid: item.guid,
         plexRatingKey: item.ratingKey,
+        viewCount,
+        lastViewedAt: readPlexUnixDate(item.lastViewedAt),
+        leafCount,
+        viewedLeafCount,
       });
     }
+  }
+
+  if (sections.length > 0) {
+    onProgress?.({
+      sectionIndex: sections.length,
+      sectionTotal: sections.length,
+      sectionTitle: "done",
+      resolvedItems: items.length,
+    });
   }
 
   return items;
@@ -335,15 +393,6 @@ export async function fetchPlexGuidsByRatingKeys(
   return guidMap;
 }
 
-function readPlexInt(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
 export type PlexShowWatchProgress = {
   leafCount: number;
   viewedLeafCount: number;
@@ -386,6 +435,45 @@ export async function fetchPlexShowWatchProgressByRatingKeys(
   }
 
   return progress;
+}
+
+export type PlexMovieWatchState = {
+  viewCount: number;
+  lastViewedAt: Date | null;
+};
+
+/** Movie view counts from Plex for movie rating keys. */
+export async function fetchPlexMovieWatchStateByRatingKeys(
+  instance: DecryptedInstance<PlexCredentials>,
+  ratingKeys: string[]
+): Promise<Map<string, PlexMovieWatchState>> {
+  const states = new Map<string, PlexMovieWatchState>();
+  const unique = [...new Set(ratingKeys.filter(Boolean))];
+  if (unique.length === 0) return states;
+
+  const baseUrl = await resolvePlexBaseUrl(instance);
+  const token = instance.credentials.token;
+
+  for (let i = 0; i < unique.length; i += METADATA_BATCH) {
+    const chunk = unique.slice(i, i + METADATA_BATCH);
+    const keys = chunk.join(",");
+    try {
+      const data = await plexFetchJson<{ MediaContainer?: { Metadata?: PlexMetadata | PlexMetadata[] } }>(
+        `${baseUrl}/library/metadata/${keys}`,
+        token
+      );
+      for (const meta of asArray(data.MediaContainer?.Metadata)) {
+        states.set(meta.ratingKey, {
+          viewCount: readPlexInt(meta.viewCount) ?? 0,
+          lastViewedAt: readPlexUnixDate(meta.lastViewedAt),
+        });
+      }
+    } catch {
+      // Optional enrichment; skip failed batch.
+    }
+  }
+
+  return states;
 }
 
 /** Fetch episode totals from Plex for show rating keys (used when Tautulli metadata lacks leaf_count). */

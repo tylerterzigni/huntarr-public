@@ -2,9 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Loader2 } from "lucide-react";
 import { posterUrl, profileUrl, cn } from "@/lib/utils";
+import { PosterImage } from "@/components/media/PosterImage";
 import type { SearchPreviewItem } from "@/lib/search/run-search";
 
 function previewHref(item: SearchPreviewItem): string {
@@ -34,15 +34,8 @@ function SearchPreviewCard({ item, onSelect }: SearchPreviewCardProps) {
         "group block w-full min-w-0 transition-transform hover:scale-105 hover:z-10"
       )}
     >
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-seerr-card shadow-lg">
-        <Image
-          src={previewImage(item)}
-          alt={item.name}
-          fill
-          draggable={false}
-          className="object-cover"
-          sizes="120px"
-        />
+      <div className="media-poster-frame relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-seerr-card shadow-lg">
+        <PosterImage src={previewImage(item)} alt={item.name} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
       <p className="mt-2 text-sm font-medium line-clamp-2 text-foreground/90">{item.name}</p>
