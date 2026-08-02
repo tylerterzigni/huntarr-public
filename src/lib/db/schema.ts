@@ -97,6 +97,7 @@ export const userPreferences = pgTable("user_preferences", {
   chatCriteria: jsonb("chat_criteria").$type<Record<string, unknown>>().default({}),
   recommendationKeywords: jsonb("recommendation_keywords").$type<string[]>().default([]),
   filterDefaults: jsonb("filter_defaults").$type<Record<string, unknown>>().default({}),
+  homeRowOrder: jsonb("home_row_order").$type<string[]>().default([]),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

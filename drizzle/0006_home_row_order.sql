@@ -1,0 +1,1 @@
+ALTER TABLE "user_preferences" ADD COLUMN "home_row_order" jsonb DEFAULT '[]'::jsonb;

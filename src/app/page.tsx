@@ -1,18 +1,16 @@
-import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth/session";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { getTmdbApiKey } from "@/lib/settings/global";
-import { BecauseYouWatchedSection } from "@/components/home/BecauseYouWatchedSection";
-import { ForYouSection } from "@/components/home/ForYouSection";
-import { HomeBrowseSection } from "@/components/home/HomeBrowseSection";
-import { BrowseRowsSkeleton, MediaRowSkeleton } from "@/components/home/MediaRowSkeleton";
+import { OrderedHomeRows } from "@/components/home/OrderedHomeRows";
 import { WarmPersonalizeOnHome } from "@/components/home/WarmPersonalizeOnHome";
+import { getHomeRowOrder } from "@/lib/home/get-home-row-order";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const session = await requireAuth();
   const tmdbConfigured = Boolean(await getTmdbApiKey());
+  const rowOrder = await getHomeRowOrder(session.user.id);
 
   return (
     <MainLayout username={session.user.name}>
@@ -27,22 +25,11 @@ export default async function HomePage() {
             to browse movies and TV.
           </div>
         )}
-        <Suspense
-          fallback={
-            <MediaRowSkeleton
-              title="For You"
-              subtitle="Personalized recommendations based on your taste"
-            />
-          }
-        >
-          <ForYouSection />
-        </Suspense>
-        <Suspense fallback={<MediaRowSkeleton title="Because You Watched" />}>
-          <BecauseYouWatchedSection userId={session.user.id} />
-        </Suspense>
-        <Suspense fallback={<BrowseRowsSkeleton />}>
-          <HomeBrowseSection userId={session.user.id} tmdbConfigured={tmdbConfigured} />
-        </Suspense>
+        <OrderedHomeRows
+          userId={session.user.id}
+          tmdbConfigured={tmdbConfigured}
+          order={rowOrder}
+        />
       </div>
     </MainLayout>
   );

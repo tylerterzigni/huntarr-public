@@ -9,6 +9,7 @@ import {
 import { encrypt, encryptJson } from "@/lib/crypto";
 import { setGlobalSetting, getGlobalSetting, getTmdbRegion, getTmdbLanguage } from "@/lib/settings/global";
 import { clearForYouRecommendationCache } from "@/lib/recommendations/engine";
+import { HOME_ROW_IDS, normalizeHomeRowOrder } from "@/lib/home/row-order";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -61,7 +62,12 @@ export async function GET() {
       baseUrl: p.baseUrl,
       hasApiKey: !!p.encryptedApiKey,
     })),
-    preferences: prefs ?? null,
+    preferences: prefs
+      ? {
+          ...prefs,
+          homeRowOrder: normalizeHomeRowOrder(prefs.homeRowOrder),
+        }
+      : null,
     userRole: session.user.role,
   });
 }
@@ -105,8 +111,19 @@ const recommendationsSchema = z.object({
   keywords: z.array(z.string().trim().min(1).max(80)).max(20),
 });
 
+const homePageSchema = z.object({
+  homeRowOrder: z.array(z.enum(HOME_ROW_IDS)).min(HOME_ROW_IDS.length).max(HOME_ROW_IDS.length),
+});
+
 const putBodySchema = z.object({
-  section: z.enum(["general", "integration", "ai", "preferences", "recommendations"]),
+  section: z.enum([
+    "general",
+    "integration",
+    "ai",
+    "preferences",
+    "recommendations",
+    "home-page",
+  ]),
   data: z.unknown(),
 });
 
@@ -241,6 +258,28 @@ export async function PUT(request: Request) {
       .where(eq(userPreferences.userId, session.user.id));
 
     clearForYouRecommendationCache(session.user.id);
+
+    return NextResponse.json({ success: true });
+  }
+
+  if (section === "home-page") {
+    const data = homePageSchema.parse(body.data);
+    const homeRowOrder = normalizeHomeRowOrder(data.homeRowOrder);
+
+    if (new Set(data.homeRowOrder).size !== HOME_ROW_IDS.length) {
+      return NextResponse.json(
+        { error: "Home row order must include each row exactly once" },
+        { status: 400 }
+      );
+    }
+
+    await db
+      .update(userPreferences)
+      .set({
+        homeRowOrder,
+        updatedAt: new Date(),
+      })
+      .where(eq(userPreferences.userId, session.user.id));
 
     return NextResponse.json({ success: true });
   }

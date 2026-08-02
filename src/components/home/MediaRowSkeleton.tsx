@@ -35,8 +35,11 @@ export function BrowseRowsSkeleton() {
   return (
     <>
       <MediaRowSkeleton title="Trending This Week" />
-      <MediaRowSkeleton title="Popular Movies" />
       <MediaRowSkeleton title="Popular TV Shows" />
+      <MediaRowSkeleton title="Upcoming TV Shows" />
+      <MediaRowSkeleton title="Popular Movies" />
+      <MediaRowSkeleton title="Upcoming Movies" />
+      <MediaRowSkeleton title="Recent Requests" />
     </>
   );
 }

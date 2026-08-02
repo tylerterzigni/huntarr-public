@@ -15,10 +15,15 @@ import {
 import { ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2, RefreshCw, Pencil } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { RecommendationsSettings } from "@/components/settings/RecommendationsSettings";
+import { HomePageSettings } from "@/components/settings/HomePageSettings";
 import { SyncProgressBar } from "@/components/settings/SyncProgressBar";
 import type { SyncJobSnapshot } from "@/lib/integrations/sync-job-types";
+import type { HomeRowId } from "@/lib/home/row-order";
 
 const LIST_PAGE_SIZE = 20;
+
+const settingsTabTriggerClassName =
+  "rounded-md border border-gray-300/70 bg-white/35 px-3.5 py-2 text-sm shadow-sm backdrop-blur-md data-[state=active]:border-gray-500 data-[state=active]:bg-white/70 data-[state=active]:font-semibold data-[state=active]:text-gray-900";
 
 function sortByTitle<T extends { title: string }>(items: T[]): T[] {
   return [...items].sort((a, b) =>
@@ -61,6 +66,7 @@ interface SettingsData {
     tautulliUsernames: string[];
     recommendationWeights: Record<string, number>;
     recommendationKeywords: string[];
+    homeRowOrder?: string[];
   } | null;
   userRole: string;
 }
@@ -285,6 +291,19 @@ export function SettingsClient() {
     load();
   }
 
+  async function saveHomePageOrder(homeRowOrder: HomeRowId[]) {
+    await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        section: "home-page",
+        data: { homeRowOrder },
+      }),
+    });
+    setMessage("Home page row order saved");
+    load();
+  }
+
   async function savePreferences(form: FormData) {
     const usernames = (form.get("tautulliUsernames") as string)
       .split(",")
@@ -399,16 +418,37 @@ export function SettingsClient() {
       )}
 
       <Tabs defaultValue="general">
-        <TabsList className="flex h-auto flex-wrap gap-1">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="radarr">Radarr</TabsTrigger>
-          <TabsTrigger value="sonarr">Sonarr</TabsTrigger>
-          <TabsTrigger value="plex">Plex</TabsTrigger>
-          <TabsTrigger value="tautulli">Tautulli</TabsTrigger>
-          <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
-          <TabsTrigger value="ai">AI</TabsTrigger>
-          <TabsTrigger value="hide">Hide Lists</TabsTrigger>
-          <TabsTrigger value="liked">Liked List</TabsTrigger>
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-none border-0 bg-transparent p-0 shadow-none backdrop-blur-none">
+          <TabsTrigger value="general" className={settingsTabTriggerClassName}>
+            General
+          </TabsTrigger>
+          <TabsTrigger value="radarr" className={settingsTabTriggerClassName}>
+            Radarr
+          </TabsTrigger>
+          <TabsTrigger value="sonarr" className={settingsTabTriggerClassName}>
+            Sonarr
+          </TabsTrigger>
+          <TabsTrigger value="plex" className={settingsTabTriggerClassName}>
+            Plex
+          </TabsTrigger>
+          <TabsTrigger value="tautulli" className={settingsTabTriggerClassName}>
+            Tautulli
+          </TabsTrigger>
+          <TabsTrigger value="recommendations" className={settingsTabTriggerClassName}>
+            Recommendations
+          </TabsTrigger>
+          <TabsTrigger value="home-page" className={settingsTabTriggerClassName}>
+            Home Page Sort
+          </TabsTrigger>
+          <TabsTrigger value="ai" className={settingsTabTriggerClassName}>
+            AI
+          </TabsTrigger>
+          <TabsTrigger value="hide" className={settingsTabTriggerClassName}>
+            Hide Lists
+          </TabsTrigger>
+          <TabsTrigger value="liked" className={settingsTabTriggerClassName}>
+            Liked List
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-6 space-y-4">
@@ -616,6 +656,13 @@ export function SettingsClient() {
           <RecommendationsSettings
             keywords={data.preferences?.recommendationKeywords ?? []}
             onSave={saveRecommendations}
+          />
+        </TabsContent>
+
+        <TabsContent value="home-page" className="mt-6">
+          <HomePageSettings
+            homeRowOrder={data.preferences?.homeRowOrder}
+            onSave={saveHomePageOrder}
           />
         </TabsContent>
 
