@@ -55,6 +55,10 @@ Plex Base URL must be the **server** address (e.g. `http://YOUR_LAN_IP:32400`) â
 
 Integrations and API keys are **shared for the whole server**. Each person gets their own login; likes and personal preferences are per-user.
 
+## Credits
+
+Huntarr is inspired by [Seerr](https://github.com/seerr-team/seerr) / [Overseerr](https://github.com/sct/overseerr) (MIT). It is an independent project and **not** an official fork or affiliated product.
+
 ## License
 
-See repository license file if present; otherwise all rights reserved by the author unless stated otherwise.
+[MIT](LICENSE) Â© 2026 Tyler Terzigni
