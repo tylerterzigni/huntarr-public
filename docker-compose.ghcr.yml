@@ -9,12 +9,12 @@
 #   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 #
 # Optional tag override:
-#   HUNTARR_IMAGE=ghcr.io/YOUR_GITHUB_USER/huntarr:latest docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#   HUNTARR_IMAGE=ghcr.io/YOUR_GITHUB_USER/huntarr-public:latest docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 #
 # Default local workflow (no GHCR required):
 #   docker compose up -d --build
 
 services:
   app:
-    image: ${HUNTARR_IMAGE:-ghcr.io/YOUR_GITHUB_USER/huntarr:latest}
+    image: ${HUNTARR_IMAGE:-ghcr.io/YOUR_GITHUB_USER/huntarr-public:latest}
     build: !reset null

@@ -1,11 +1,6 @@
 # Build and push Huntarr images to GHCR from huntarr-public (main publish repo).
-# Image: ghcr.io/<owner>/huntarr
-#
-# Tags on push to main:
-#   :production  (homelab host pin — same tag as before)
-#   :latest
-#   :main
-#   :sha-<shortsha>
+# Image: ghcr.io/<owner>/huntarr-public
+# Tags on push to main: :production and :latest
 #
 # Secrets: never bake .env / AUTH_* / SETTINGS_ENCRYPTION_KEY / API keys into the image.
 # Runtime config comes from the host compose env_file / environment.
@@ -26,9 +21,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # Keep package name `huntarr` so homelab host compose can keep pulling
-  # ghcr.io/<owner>/huntarr:production without a mega-compose rename.
-  IMAGE_NAME: ${{ github.repository_owner }}/huntarr
+  # Package name matches the public repo so Actions can push without the
+  # abandoned private Huntarr package's ACL, and homelab host pulls are obvious.
+  IMAGE_NAME: ${{ github.repository_owner }}/huntarr-public
 
 jobs:
   build-and-push:
@@ -54,8 +49,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=production,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
             type=sha,prefix=sha-,format=short
             type=semver,pattern={{raw}}
           labels: |
