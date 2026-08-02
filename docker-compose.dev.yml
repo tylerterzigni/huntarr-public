@@ -1,0 +1,36 @@
+# Development overlay — live reload with bind-mounted source.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#   npm run docker:dev
+#
+# Stop:
+#   npm run docker:dev:down
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: huntarr-app-dev
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - huntarr_node_modules:/app/node_modules
+      - huntarr_next_cache:/app/.next
+    environment:
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -d node_modules/next ]; then npm ci; fi
+        node --import tsx src/lib/db/migrate.ts
+        node --import tsx src/lib/db/seed.ts
+        exec npm run dev
+
+volumes:
+  huntarr_node_modules:
+  huntarr_next_cache:

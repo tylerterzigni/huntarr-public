@@ -1,0 +1,54 @@
+# Homelab Huntarr + Postgres (build from source)
+#
+# From repo root:
+#   mkdir -p data/postgres
+#   cp deploy/env.homelab.example .env   # then edit secrets / AUTH_URL
+#   docker compose -f deploy/docker-compose.homelab.yml --env-file .env up -d --build
+#
+# NEVER: docker compose down -v
+# NEVER: delete ./data/postgres
+
+services:
+  huntarr-db:
+    image: postgres:16-alpine
+    container_name: huntarr-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-huntarr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-huntarr}
+      TZ: ${TZ:-UTC}
+    volumes:
+      # STABLE DATA PATH — do not delete
+      - ../data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-huntarr} -d ${POSTGRES_DB:-huntarr}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  huntarr:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: huntarr-app
+    restart: unless-stopped
+    depends_on:
+      huntarr-db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-huntarr}:${POSTGRES_PASSWORD}@huntarr-db:5432/${POSTGRES_DB:-huntarr}
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
+      AUTH_URL: ${AUTH_URL:?Set AUTH_URL to the URL clients use}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?Set SETTINGS_ENCRYPTION_KEY in .env}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@huntarr.local}
+      SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme}
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      TZ: ${TZ:-UTC}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

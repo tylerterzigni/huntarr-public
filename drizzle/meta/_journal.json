@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1782699614140,
+      "tag": "0000_neat_the_hunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782700000000,
+      "tag": "0001_recommendation_keywords",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782700100000,
+      "tag": "0002_plex_rating_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782700200000,
+      "tag": "0003_fully_watched",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782700300000,
+      "tag": "0004_liked_list",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782700400000,
+      "tag": "0005_ai_provider_user_id",
+      "breakpoints": true
+    }
+  ]
+}

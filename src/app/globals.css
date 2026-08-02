@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+    /* Seerr mobile: 56px icon row + home-indicator gap (fallback when PWA omits safe-area) */
+    --mobile-bottom-nav-height: 3.5rem;
+    --mobile-bottom-inset: max(var(--safe-area-bottom), 34px);
+    --background: 220 14% 91%;
+    --foreground: 224 71% 4%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 71% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71% 4%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 220 14% 86%;
+    --secondary-foreground: 224 71% 4%;
+    --muted: 220 14% 86%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 220 14% 86%;
+    --accent-foreground: 224 71% 4%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 13% 82%;
+    --input: 220 13% 82%;
+    --ring: 239 84% 67%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    overscroll-behavior-y: none;
+  }
+}
+
+html.pwa-standalone {
+  touch-action: manipulation;
+}
+
+html.pwa-standalone body {
+  overscroll-behavior-y: none;
+}
+
+html.pwa-standalone input,
+html.pwa-standalone select,
+html.pwa-standalone textarea {
+  font-size: 16px;
+}
+
+html.pwa-standalone .horizontal-scroll-row {
+  touch-action: pan-x pan-y;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 3px;
+}
+
+.horizontal-scroll-row-wrapper {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+.horizontal-scroll-row-overlay {
+  background: transparent;
+}
+
+.horizontal-scroll-row {
+  touch-action: pan-y pinch-zoom;
+}
+
+.horizontal-scroll-row .scroll-row-item {
+  -webkit-user-drag: none;
+}
+
+.horizontal-scroll-row .scroll-row-item:hover {
+  transform: none !important;
+  z-index: auto !important;
+}
+
+@layer utilities {
+  .pt-safe {
+    padding-top: var(--safe-area-top);
+  }
+  .pb-safe {
+    padding-bottom: var(--safe-area-bottom);
+  }
+  .pb-mobile-bottom {
+    padding-bottom: var(--mobile-bottom-inset);
+  }
+  .px-safe {
+    padding-left: var(--safe-area-left);
+    padding-right: var(--safe-area-right);
+  }
+}
+
+/* Seerr-style mobile bottom bars: icon row + home-indicator gap below */
+@layer components {
+  .mobile-bottom-dock {
+    @apply border-t border-gray-300/70 bg-seerr-bg/95 backdrop-blur-md;
+    padding-bottom: var(--mobile-bottom-inset);
+  }
+
+  .mobile-bottom-dock-nav {
+    @apply flex items-stretch justify-around px-2;
+    height: var(--mobile-bottom-nav-height);
+  }
+
+  .mobile-bottom-dock-composer {
+    @apply flex items-center gap-2 px-4 py-3;
+  }
+}
+
+@keyframes personalize-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}

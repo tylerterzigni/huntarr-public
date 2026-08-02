@@ -1,0 +1,29 @@
+# Copy to docker-compose.override.yml and adjust for your environment.
+#
+# Windows Docker Desktop — reach services on the host (Settings → integration URLs):
+#   Radarr:   http://host.docker.internal:7878
+#   Sonarr:   http://host.docker.internal:8989
+#   Plex:     http://host.docker.internal:32400
+#   Tautulli: http://host.docker.internal:8181
+#
+# Linux homelab / NAS — reach LAN services:
+#   extra_hosts is already set in docker-compose.yml.
+#   Configure integration URLs in Settings, e.g.:
+#     Radarr HD:  http://192.168.1.10:7878
+#     Sonarr HD:  http://192.168.1.10:8989
+#     Plex:       http://192.168.1.10:32400
+#     Tautulli:   http://192.168.1.10:8181
+#
+# Mixed networking: each integration instance stores its own base URL in the DB.
+#
+# Development with live reload:
+#   npm run docker:dev
+#   (or: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build)
+#
+# Production:
+#   docker compose up -d --build
+
+services:
+  app:
+    environment:
+      AUTH_URL: http://localhost:3000

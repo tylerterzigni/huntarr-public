@@ -1,0 +1,59 @@
+# Default: local Docker build (Windows Docker Desktop or Linux).
+#   docker compose up -d --build
+#
+# Optional image pull overlay (if you publish your own registry image):
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#
+# Alternate homelab layouts: see deploy/ (private ops may use additional files).
+
+# Database safety: see docs/DATABASE_SAFETY.md
+# - Never docker compose down -v (wipes postgres_data)
+# - Never change SETTINGS_ENCRYPTION_KEY on a live DB
+# - App updates: recreate app only; leave db volume untouched
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: huntarr-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-huntarr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-huntarr_secret_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-huntarr}
+    volumes:
+      # STABLE named volume — do not delete, rename, or recreate with -v
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-huntarr} -d ${POSTGRES_DB:-huntarr}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: huntarr-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-huntarr}:${POSTGRES_PASSWORD:-huntarr_secret_change_me}@db:5432/${POSTGRES_DB:-huntarr}
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@huntarr.local}
+      SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme}
+      NODE_ENV: production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  # Persistent Huntarr Postgres data — do not delete with compose down -v
+  postgres_data:
