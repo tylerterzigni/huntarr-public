@@ -7,6 +7,7 @@ import { MediaCard } from "@/components/media/MediaCard";
 import { HorizontalScrollRow } from "@/components/media/HorizontalScrollRow";
 import { MEDIA_CARD_WIDTH_PX } from "@/components/media/constants";
 import { useLibraryWatchedVisibility } from "@/components/providers/LibraryWatchedVisibilityProvider";
+import { HOME_ROW_LIMIT } from "@/lib/recommendations/constants";
 import type { RecommendationItem } from "@/types";
 import { HUNTARR_REFRESH_EVENT } from "@/lib/pwa/refresh";
 import {
@@ -34,7 +35,7 @@ function PosterSkeleton() {
 }
 
 export function ForYouRow() {
-  const { filterVisibleItems } = useLibraryWatchedVisibility();
+  const { selectVisibleRowItems } = useLibraryWatchedVisibility();
   const [items, setItems] = useState<RecommendationItem[]>([]);
   const [revealedCount, setRevealedCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -46,12 +47,15 @@ export function ForYouRow() {
   const [rowEpoch, setRowEpoch] = useState(0);
 
   const visibleItems = useMemo(
-    () => filterVisibleItems(items),
-    [items, filterVisibleItems]
+    () => selectVisibleRowItems(items, HOME_ROW_LIMIT),
+    [items, selectVisibleRowItems]
   );
   const slotCount = done
     ? visibleItems.length
-    : Math.max(SKELETON_SLOTS, visibleItems.length, revealedCount);
+    : Math.min(
+        HOME_ROW_LIMIT,
+        Math.max(SKELETON_SLOTS, visibleItems.length, revealedCount)
+      );
 
   const stopStagger = useCallback(() => {
     if (staggerTimerRef.current) {
@@ -119,9 +123,9 @@ export function ForYouRow() {
           setLoading(false);
           es.close();
           eventSourceRef.current = null;
-          startStagger(next.length);
+          startStagger(Math.min(next.length, HOME_ROW_LIMIT));
         } else if (next.length > 0) {
-          startStagger(next.length);
+          startStagger(Math.min(next.length, HOME_ROW_LIMIT));
         }
       };
 

@@ -1,6 +1,15 @@
 /** Items shown per horizontal row on the home page. */
 export const HOME_ROW_LIMIT = 40;
 
+/**
+ * Over-fetch multiplier so rows can backfill when library/watched titles are hidden.
+ * Server pools this many × HOME_ROW_LIMIT; the client still displays HOME_ROW_LIMIT.
+ */
+export const HOME_ROW_VISIBILITY_POOL_MULTIPLIER = 2;
+
+/** Candidate pool size passed to the client for home recommendation rows. */
+export const HOME_ROW_POOL_LIMIT = HOME_ROW_LIMIT * HOME_ROW_VISIBILITY_POOL_MULTIPLIER;
+
 /** TMDB discover pages loaded on first paint (~20 results each → ~40 titles). */
 export const DISCOVER_INITIAL_PAGES = 2;
 
@@ -13,10 +22,10 @@ export const DISCOVER_MAX_PAGES = 50;
 /** Max discover grid items sent to the personalize-browse API (multi-page + load more). */
 export const DISCOVER_PERSONALIZE_MAX = 150;
 
-/** Extra candidates scored before trimming to row limit. */
-export const FOR_YOU_CANDIDATE_POOL = 60;
+/** Extra candidates scored before trimming to the visibility pool limit. */
+export const FOR_YOU_CANDIDATE_POOL = HOME_ROW_POOL_LIMIT + 20;
 
-/** Candidates sent to the AI reranker (match home row size for full AI ranking). */
+/** Candidates sent to the AI reranker (match home display size for full AI ranking). */
 export const FOR_YOU_RERANK_LIMIT = HOME_ROW_LIMIT;
 
 /** Max similar/rec candidates kept per watch, library, or liked seed. */

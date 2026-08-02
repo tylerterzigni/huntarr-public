@@ -17,6 +17,11 @@ interface MediaRowScrollerProps {
   showReason?: boolean;
   /** When false, keep in-library / watched titles (e.g. Recent Requests). Default true. */
   applyVisibilityFilter?: boolean;
+  /**
+   * Max posters after visibility filtering. Extra pool items backfill hidden
+   * library/watched slots. Omit to show the full filtered list (e.g. filmography).
+   */
+  visibleLimit?: number;
 }
 
 export function MediaRowScroller({
@@ -24,8 +29,9 @@ export function MediaRowScroller({
   className,
   showReason = true,
   applyVisibilityFilter = true,
+  visibleLimit,
 }: MediaRowScrollerProps) {
-  const { filterVisibleItems } = useLibraryWatchedVisibility();
+  const { filterVisibleItems, selectVisibleRowItems } = useLibraryWatchedVisibility();
   const [items, setItems] = useState(initialItems);
 
   useEffect(() => {
@@ -44,8 +50,12 @@ export function MediaRowScroller({
 
   const visibleItems = useMemo(() => {
     const typed = items as RecommendationItem[];
-    return applyVisibilityFilter ? filterVisibleItems(typed) : typed;
-  }, [items, filterVisibleItems, applyVisibilityFilter]);
+    if (!applyVisibilityFilter) return typed;
+    if (visibleLimit != null) {
+      return selectVisibleRowItems(typed, visibleLimit);
+    }
+    return filterVisibleItems(typed);
+  }, [items, filterVisibleItems, selectVisibleRowItems, applyVisibilityFilter, visibleLimit]);
 
   if (visibleItems.length === 0) return null;
 

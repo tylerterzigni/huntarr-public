@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getForYouRecommendations, getBecauseYouWatched } from "@/lib/recommendations/engine";
-import { HOME_ROW_LIMIT } from "@/lib/recommendations/constants";
+import { HOME_ROW_POOL_LIMIT } from "@/lib/recommendations/constants";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       const items = await getForYouRecommendations(
         session.user.id,
         {},
-        { limit: HOME_ROW_LIMIT, refresh, refreshCount, refreshGeneration }
+        { limit: HOME_ROW_POOL_LIMIT, refresh, refreshCount, refreshGeneration }
       );
       return NextResponse.json({ items });
     }
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
         seedTmdbId: Number.isFinite(seedTmdbId) ? seedTmdbId : undefined,
         seedMediaType:
           seedMediaType === "movie" || seedMediaType === "tv" ? seedMediaType : undefined,
-        limit: HOME_ROW_LIMIT,
+        limit: HOME_ROW_POOL_LIMIT,
       });
       return NextResponse.json(result);
     }

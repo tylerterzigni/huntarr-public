@@ -5,7 +5,11 @@ import {
 } from "@/lib/recommendations/filters";
 import type { MediaType, RecommendationItem, TmdbMediaItem } from "@/types";
 
+/** Posters shown per related row on title detail. */
 export const DETAIL_RELATED_LIMIT = 20;
+
+/** Extra related candidates so hiding library/watched can backfill the row. */
+export const DETAIL_RELATED_POOL_LIMIT = DETAIL_RELATED_LIMIT * 2;
 
 export function extractRelatedFromDetails(
   details: Record<string, unknown>,
@@ -19,7 +23,7 @@ export function normalizeRelatedItems(
   items: TmdbMediaItem[],
   mediaType: MediaType,
   excludeId: number,
-  limit = DETAIL_RELATED_LIMIT
+  limit = DETAIL_RELATED_POOL_LIMIT
 ): TmdbMediaItem[] {
   return items
     .filter((item) => item.id !== excludeId && (item.poster_path || item.title || item.name))

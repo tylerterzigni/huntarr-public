@@ -8,6 +8,7 @@ import { PersonalizeSortButton } from "@/components/discover/PersonalizeSortButt
 import { PersonalizeProgressBar } from "@/components/discover/PersonalizeProgressBar";
 import { useLibraryWatchedVisibility } from "@/components/providers/LibraryWatchedVisibilityProvider";
 import { usePersonalizeBrowseStream } from "@/hooks/usePersonalizeBrowseStream";
+import { HOME_ROW_LIMIT } from "@/lib/recommendations/constants";
 import {
   HUNTARR_TITLE_HIDDEN_EVENT,
   matchesHiddenTitle,
@@ -27,7 +28,7 @@ export function PersonalizedBrowseRow({
   initialItems,
   defaultOrderLabel = "default",
 }: PersonalizedBrowseRowProps) {
-  const { filterVisibleItems } = useLibraryWatchedVisibility();
+  const { selectVisibleRowItems } = useLibraryWatchedVisibility();
   const {
     personalized,
     items: personalizedItems,
@@ -63,13 +64,13 @@ export function PersonalizedBrowseRow({
     [personalized, personalizedItems, localInitialItems]
   );
   const visibleItems = useMemo(
-    () => filterVisibleItems(sortedItems as RecommendationItem[]),
-    [sortedItems, filterVisibleItems]
+    () => selectVisibleRowItems(sortedItems as RecommendationItem[], HOME_ROW_LIMIT),
+    [sortedItems, selectVisibleRowItems]
   );
 
   const isRollingOut = personalized && initializing;
   const slotTotal = isRollingOut
-    ? Math.max(localInitialItems.length, visibleItems.length)
+    ? Math.max(Math.min(localInitialItems.length, HOME_ROW_LIMIT), visibleItems.length)
     : visibleItems.length;
   const revealed = isRollingOut ? visibleItems.slice(0, revealedCount) : visibleItems;
   const skeletonCount = isRollingOut ? Math.max(0, slotTotal - revealedCount) : 0;
@@ -114,7 +115,7 @@ export function PersonalizedBrowseRow({
         <div className="mb-2 px-4 md:mb-4 md:px-8">
           <PersonalizeProgressBar
             ranked={progress?.ranked ?? 0}
-            total={progress?.total ?? localInitialItems.length}
+            total={progress?.total ?? Math.min(localInitialItems.length, HOME_ROW_LIMIT)}
             done={false}
             indeterminate={!progress?.ranked}
           />

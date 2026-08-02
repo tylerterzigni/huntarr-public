@@ -167,8 +167,11 @@ export async function getPersonDetails(id: number) {
   });
 }
 
-export async function getSimilar(mediaType: MediaType, id: number) {
-  return tmdbFetch<{ results: TmdbMediaItem[] }>(`/${mediaType}/${id}/similar`);
+export async function getSimilar(mediaType: MediaType, id: number, page = 1) {
+  return tmdbFetch<{ results: TmdbMediaItem[]; total_pages: number }>(
+    `/${mediaType}/${id}/similar`,
+    { page: String(page) }
+  );
 }
 
 export async function getRecommendations(mediaType: MediaType, id: number, page = 1) {

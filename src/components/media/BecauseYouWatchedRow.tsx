@@ -5,6 +5,7 @@ import { RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BecauseYouWatchedSeedSearch } from "./BecauseYouWatchedSeedSearch";
 import { MediaRowScroller } from "./MediaRowScroller";
+import { HOME_ROW_LIMIT } from "@/lib/recommendations/constants";
 import type { MediaType, RecommendationItem } from "@/types";
 
 interface BecauseYouWatchedRowProps {
@@ -98,6 +99,7 @@ export function BecauseYouWatchedRow({
         className="px-4 pb-2 md:px-8 md:pb-4"
         items={items}
         showReason={false}
+        visibleLimit={HOME_ROW_LIMIT}
       />
     </section>
   );

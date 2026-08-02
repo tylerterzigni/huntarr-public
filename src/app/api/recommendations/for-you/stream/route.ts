@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { HOME_ROW_LIMIT } from "@/lib/recommendations/constants";
+import { HOME_ROW_POOL_LIMIT } from "@/lib/recommendations/constants";
 import { streamForYouRecommendations } from "@/lib/recommendations/engine";
 
 export async function GET(request: Request) {
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       try {
         await streamForYouRecommendations(
           session.user.id,
-          { refresh, limit: HOME_ROW_LIMIT, refreshCount, refreshGeneration },
+          { refresh, limit: HOME_ROW_POOL_LIMIT, refreshCount, refreshGeneration },
           send
         );
       } catch {

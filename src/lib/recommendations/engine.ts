@@ -42,7 +42,7 @@ import {
   FOR_YOU_RERANK_CHUNK_SIZE,
   FOR_YOU_RERANK_LIMIT,
   FOR_YOU_WATCH_SEED_LIMIT,
-  HOME_ROW_LIMIT,
+  HOME_ROW_POOL_LIMIT,
   HOME_BROWSE_RERANK_LIMIT,
   LIKED_SEED_SCORE_BOOST,
   PERSONALIZE_CACHE_TTL_MS,
@@ -1628,7 +1628,7 @@ export async function streamPersonalizeBrowseItems(
 
   const rankingMap = new Map<number, { reason: string; score: number }>();
   const rerankTotal = ctx.rerankPool.length;
-  const isHomeRow = items.length <= HOME_ROW_LIMIT;
+  const isHomeRow = items.length <= HOME_ROW_POOL_LIMIT;
   const tasteSummary = generateTasteSummary(ctx.taste);
   const emptySeeds = new Map<string, RecommendationSeed>();
 
@@ -1765,7 +1765,7 @@ export async function getForYouRecommendations(
     refreshGeneration?: number;
   } = {}
 ): Promise<RecommendationItem[]> {
-  const limit = options.limit ?? HOME_ROW_LIMIT;
+  const limit = options.limit ?? HOME_ROW_POOL_LIMIT;
   const refreshCount = Math.max(0, options.refreshCount ?? 0);
   const refreshGeneration = Math.max(0, options.refreshGeneration ?? 0);
   const cacheKey = forYouCacheKey(
@@ -1910,7 +1910,7 @@ async function prepareForYouStreamContext(
       popularKeys: Set<string>;
     }
 > {
-  const limit = options.limit ?? HOME_ROW_LIMIT;
+  const limit = options.limit ?? HOME_ROW_POOL_LIMIT;
   const refreshCount = Math.max(0, options.refreshCount ?? 0);
   const refreshGeneration = Math.max(0, options.refreshGeneration ?? 0);
   const cacheKey = forYouCacheKey(
@@ -2256,7 +2256,7 @@ export async function getBecauseYouWatched(
   seedCount: number;
   items: RecommendationItem[];
 } | null> {
-  const limit = options.limit ?? HOME_ROW_LIMIT;
+  const limit = options.limit ?? HOME_ROW_POOL_LIMIT;
   const seeds = await getRecentWatchSeeds(userId);
 
   const [prefs] = await db
@@ -2310,9 +2310,13 @@ export async function getBecauseYouWatched(
     seed = seeds[seedIndex];
   }
 
-  const [similar, recs] = await Promise.all([
-    getSimilar(seed.mediaType, seed.tmdbId),
-    getRecommendations(seed.mediaType, seed.tmdbId),
+  const [similarPage1, similarPage2, recsPage1, recsPage2] = await Promise.all([
+    getSimilar(seed.mediaType, seed.tmdbId, 1),
+    getSimilar(seed.mediaType, seed.tmdbId, 2).catch(() => ({ results: [] as TmdbMediaItem[] })),
+    getRecommendations(seed.mediaType, seed.tmdbId, 1),
+    getRecommendations(seed.mediaType, seed.tmdbId, 2).catch(() => ({
+      results: [] as TmdbMediaItem[],
+    })),
   ]);
 
   const [hiddenIds, statusSets] = await Promise.all([
@@ -2321,7 +2325,12 @@ export async function getBecauseYouWatched(
   ]);
   const seen = new Set<string>();
   const rawItems = prioritizeHomeLocaleItems(
-    [...similar.results, ...recs.results].filter((item) => {
+    [
+      ...similarPage1.results,
+      ...recsPage1.results,
+      ...similarPage2.results,
+      ...recsPage2.results,
+    ].filter((item) => {
       const key = mediaItemKey(item);
       if (seen.has(key)) return false;
       seen.add(key);

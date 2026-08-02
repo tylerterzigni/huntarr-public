@@ -9,10 +9,10 @@
 # Linux homelab / NAS — reach LAN services:
 #   extra_hosts is already set in docker-compose.yml.
 #   Configure integration URLs in Settings, e.g.:
-#     Radarr HD:  http://192.168.1.10:7878
-#     Sonarr HD:  http://192.168.1.10:8989
-#     Plex:       http://192.168.1.10:32400
-#     Tautulli:   http://192.168.1.10:8181
+#     Radarr HD:  http://YOUR_LAN_IP:7878
+#     Sonarr HD:  http://YOUR_LAN_IP:8989
+#     Plex:       http://YOUR_LAN_IP:32400
+#     Tautulli:   http://YOUR_LAN_IP:8181
 #
 # Mixed networking: each integration instance stores its own base URL in the DB.
 #

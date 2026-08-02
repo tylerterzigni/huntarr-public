@@ -8,7 +8,7 @@ import {
   getUpcomingMovieItems,
   getUpcomingTvItems,
 } from "@/lib/integrations/tmdb/client";
-import { HOME_ROW_LIMIT } from "@/lib/recommendations/constants";
+import { HOME_ROW_POOL_LIMIT } from "@/lib/recommendations/constants";
 import {
   enrichItemsWithStatus,
   getStatusIdSets,
@@ -23,7 +23,7 @@ import { arrRequestsLog, userPreferences } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
 import type { MediaType, TmdbMediaItem } from "@/types";
 
-const HOME_FETCH_LIMIT = HOME_ROW_LIMIT * HOME_LOCALE_FETCH_MULTIPLIER;
+const HOME_FETCH_LIMIT = HOME_ROW_POOL_LIMIT * HOME_LOCALE_FETCH_MULTIPLIER;
 
 function prepareHomeBrowseRow(
   items: TmdbMediaItem[],
@@ -31,7 +31,7 @@ function prepareHomeBrowseRow(
 ): TmdbMediaItem[] {
   return prioritizeHomeLocaleItems(
     withoutHiddenItems(enrichItemsWithStatus(items, statusSets)),
-    HOME_ROW_LIMIT
+    HOME_ROW_POOL_LIMIT
   );
 }
 

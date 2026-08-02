@@ -8,6 +8,8 @@ interface MediaRowProps {
   showReason?: boolean;
   /** When false, keep in-library / watched titles (e.g. Recent Requests). Default true. */
   applyVisibilityFilter?: boolean;
+  /** Cap visible posters; extra pool items backfill hidden library/watched slots. */
+  visibleLimit?: number;
 }
 
 export function MediaRow({
@@ -16,6 +18,7 @@ export function MediaRow({
   items,
   showReason = true,
   applyVisibilityFilter = true,
+  visibleLimit,
 }: MediaRowProps) {
   if (items.length === 0) return null;
 
@@ -30,6 +33,7 @@ export function MediaRow({
         items={items}
         showReason={showReason}
         applyVisibilityFilter={applyVisibilityFilter}
+        visibleLimit={visibleLimit}
       />
     </section>
   );
