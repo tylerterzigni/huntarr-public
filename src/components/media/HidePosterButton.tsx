@@ -150,7 +150,7 @@ export function HidePosterButton({
           </DialogHeader>
           <p className="text-sm text-gray-700">
             This will add the title to your personal blocklist. Hidden titles no longer appear in
-            browse and recommendations. You can remove them from Settings → Hide Lists.
+            browse and recommendations. You can remove them from Settings → Hide List.
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <Button

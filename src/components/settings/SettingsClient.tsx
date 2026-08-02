@@ -17,6 +17,7 @@ import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { RecommendationsSettings } from "@/components/settings/RecommendationsSettings";
 import { HomePageSettings } from "@/components/settings/HomePageSettings";
 import { SyncProgressBar } from "@/components/settings/SyncProgressBar";
+import { ListItemSearch } from "@/components/settings/ListItemSearch";
 import type { SyncJobSnapshot } from "@/lib/integrations/sync-job-types";
 import type { HomeRowId } from "@/lib/home/row-order";
 
@@ -93,6 +94,8 @@ export function SettingsClient() {
   const [likedItems, setLikedItems] = useState<LikedItem[]>([]);
   const [hidePage, setHidePage] = useState(1);
   const [likedPage, setLikedPage] = useState(1);
+  const [highlightedHideId, setHighlightedHideId] = useState<string | null>(null);
+  const [highlightedLikedId, setHighlightedLikedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [testing, setTesting] = useState<string | null>(null);
@@ -397,6 +400,69 @@ export function SettingsClient() {
   const pagedHideItems = paginate(sortedHideItems, safeHidePage, LIST_PAGE_SIZE);
   const pagedLikedItems = paginate(sortedLikedItems, safeLikedPage, LIST_PAGE_SIZE);
 
+  const hideSearchItems = useMemo(
+    () =>
+      sortedHideItems.map((item) => ({
+        id: item.id,
+        title: item.title,
+        subtitle: `${item.mediaType} · ${item.scope}`,
+      })),
+    [sortedHideItems]
+  );
+  const likedSearchItems = useMemo(
+    () =>
+      sortedLikedItems.map((item) => ({
+        id: item.id,
+        title: item.title,
+        subtitle: item.kind,
+      })),
+    [sortedLikedItems]
+  );
+
+  useEffect(() => {
+    if (!highlightedHideId) return;
+    const timer = window.setTimeout(() => setHighlightedHideId(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [highlightedHideId]);
+
+  useEffect(() => {
+    if (!highlightedLikedId) return;
+    const timer = window.setTimeout(() => setHighlightedLikedId(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [highlightedLikedId]);
+
+  useEffect(() => {
+    if (!highlightedHideId) return;
+    if (!pagedHideItems.some((item) => item.id === highlightedHideId)) return;
+    document.getElementById(`hide-item-${highlightedHideId}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }, [highlightedHideId, pagedHideItems]);
+
+  useEffect(() => {
+    if (!highlightedLikedId) return;
+    if (!pagedLikedItems.some((item) => item.id === highlightedLikedId)) return;
+    document.getElementById(`liked-item-${highlightedLikedId}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }, [highlightedLikedId, pagedLikedItems]);
+
+  function jumpToHideItem(id: string) {
+    const index = sortedHideItems.findIndex((item) => item.id === id);
+    if (index < 0) return;
+    setHidePage(Math.floor(index / LIST_PAGE_SIZE) + 1);
+    setHighlightedHideId(id);
+  }
+
+  function jumpToLikedItem(id: string) {
+    const index = sortedLikedItems.findIndex((item) => item.id === id);
+    if (index < 0) return;
+    setLikedPage(Math.floor(index / LIST_PAGE_SIZE) + 1);
+    setHighlightedLikedId(id);
+  }
+
   if (loading || !data) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -444,7 +510,7 @@ export function SettingsClient() {
             AI
           </TabsTrigger>
           <TabsTrigger value="hide" className={settingsTabTriggerClassName}>
-            Hide Lists
+            Hide List
           </TabsTrigger>
           <TabsTrigger value="liked" className={settingsTabTriggerClassName}>
             Liked List
@@ -772,7 +838,19 @@ export function SettingsClient() {
         <TabsContent value="hide" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Hide Lists</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>Hide List</CardTitle>
+                <ListItemSearch
+                  items={hideSearchItems}
+                  onSelect={(item) => jumpToHideItem(item.id)}
+                  placeholder="Search hidden titles..."
+                  emptyLabel="No hidden titles yet."
+                  noMatchLabel="No matching hidden titles."
+                  ariaLabel="Search hide list"
+                  title="Find a title on your hide list"
+                  disabled={sortedHideItems.length === 0}
+                />
+              </div>
               <p className="text-sm text-muted-foreground">Global and personal hidden titles</p>
             </CardHeader>
             <CardContent>
@@ -782,7 +860,15 @@ export function SettingsClient() {
                 <>
                   <div className="space-y-2">
                     {pagedHideItems.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between rounded-lg border border-gray-300/70 bg-white/40 p-3 text-sm backdrop-blur-md">
+                      <div
+                        key={item.id}
+                        id={`hide-item-${item.id}`}
+                        className={`flex items-center justify-between rounded-lg border p-3 text-sm backdrop-blur-md transition-colors ${
+                          highlightedHideId === item.id
+                            ? "border-gray-500 bg-white/80 ring-2 ring-gray-400/60"
+                            : "border-gray-300/70 bg-white/40"
+                        }`}
+                      >
                         <div>
                           <span className="font-medium">{item.title}</span>
                           <span className="text-muted-foreground ml-2 capitalize">{item.mediaType} · {item.scope}</span>
@@ -808,7 +894,19 @@ export function SettingsClient() {
         <TabsContent value="liked" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Liked List</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>Liked List</CardTitle>
+                <ListItemSearch
+                  items={likedSearchItems}
+                  onSelect={(item) => jumpToLikedItem(item.id)}
+                  placeholder="Search liked items..."
+                  emptyLabel="Nothing liked yet."
+                  noMatchLabel="No matching liked items."
+                  ariaLabel="Search liked list"
+                  title="Find an item on your liked list"
+                  disabled={sortedLikedItems.length === 0}
+                />
+              </div>
               <p className="text-sm text-muted-foreground">
                 Shows, movies, and people you have liked. Used to personalize AI recommendations.
               </p>
@@ -824,7 +922,12 @@ export function SettingsClient() {
                     {pagedLikedItems.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between rounded-lg border border-gray-300/70 bg-white/40 p-3 text-sm backdrop-blur-md"
+                        id={`liked-item-${item.id}`}
+                        className={`flex items-center justify-between rounded-lg border p-3 text-sm backdrop-blur-md transition-colors ${
+                          highlightedLikedId === item.id
+                            ? "border-gray-500 bg-white/80 ring-2 ring-gray-400/60"
+                            : "border-gray-300/70 bg-white/40"
+                        }`}
                       >
                         <div>
                           <span className="font-medium">{item.title}</span>
