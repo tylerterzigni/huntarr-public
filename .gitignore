@@ -21,6 +21,8 @@
 # misc
 .DS_Store
 *.pem
+.vscode/
+.idea/
 
 # debug
 npm-debug.log*
@@ -34,8 +36,13 @@ yarn-error.log*
 !.env.example
 !.env*.example
 *.pem
-secrets/
 *.key
+*.pfx
+secrets/
+credentials.json
+service-account*.json
+id_rsa
+id_ed25519
 
 # local Docker overrides (may contain secrets)
 docker-compose.override.yml

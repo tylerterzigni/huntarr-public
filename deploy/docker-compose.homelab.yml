@@ -31,6 +31,11 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        IMAGE_SOURCE: ${IMAGE_SOURCE:-https://github.com/tylerterzigni/huntarr-public}
+        IMAGE_URL: ${IMAGE_URL:-https://github.com/tylerterzigni/huntarr-public}
+        VERSION: ${VERSION:-0.1.0}
+        REVISION: ${REVISION:-local}
     container_name: huntarr-app
     restart: unless-stopped
     depends_on:

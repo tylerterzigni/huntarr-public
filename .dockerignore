@@ -1,10 +1,47 @@
+# Dependencies & build output
 node_modules
 .next
 .git
-.gitignore
-*.md
+coverage
+out
+build
+dist
+tmp
+data
+
+# Secrets — never send host env into the build context
 .env
 .env.*
-docker-compose.override.yml
+!.env.example
+secrets
+*.pem
+*.key
+*.pfx
+credentials.json
+service-account*.json
+id_rsa
+id_ed25519
+
+# Private ops / agent / local tooling (not needed to compile the app)
 .cursor
+.github
+.vscode
+.idea
 terminals
+agent-transcripts
+deploy
+public-release
+scripts
+docs
+backups
+AGENTS.md
+
+# Compose & host overlays (runtime only; not baked into the image)
+docker-compose*.yml
+Dockerfile.dev
+
+# Docs and shells (entrypoint is allowlisted below)
+*.md
+*.ps1
+*.sh
+!docker-entrypoint.sh

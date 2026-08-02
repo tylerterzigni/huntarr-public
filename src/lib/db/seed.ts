@@ -13,6 +13,11 @@ async function seed() {
   const email = process.env.SEED_ADMIN_EMAIL ?? "admin@huntarr.local";
   const username = process.env.SEED_ADMIN_USERNAME ?? "admin";
   const password = process.env.SEED_ADMIN_PASSWORD ?? "changeme";
+  if (!process.env.SEED_ADMIN_PASSWORD || password === "changeme") {
+    console.warn(
+      "SEED_ADMIN_PASSWORD is using the default; set a strong value in the container environment before first boot."
+    );
+  }
   const passwordHash = await bcrypt.hash(password, 12);
 
   const [admin] = await db

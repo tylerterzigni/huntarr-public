@@ -1,10 +1,11 @@
-# Default: local Docker build (Windows Docker Desktop or Linux).
+# Default: local Docker build (Docker Desktop or Linux).
 #   docker compose up -d --build
 #
-# Optional image pull overlay (if you publish your own registry image):
+# Optional published-image overlay (set HUNTARR_IMAGE / use docker-compose.ghcr.yml):
 #   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 #
-# Alternate homelab layouts: see deploy/ (private ops may use additional files).
+# The image contains no API keys, LAN IPs, or host paths. Provide secrets via
+# `.env` / environment (AUTH_SECRET, SETTINGS_ENCRYPTION_KEY, DATABASE_URL, etc.).
 
 # Database safety: see docs/DATABASE_SAFETY.md
 # - Never docker compose down -v (wipes postgres_data)
@@ -18,7 +19,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-huntarr}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-huntarr_secret_change_me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-huntarr}
     volumes:
       # STABLE named volume — do not delete, rename, or recreate with -v
@@ -35,6 +36,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Local builds keep generic OCI labels; CI overrides these for GHCR.
+        IMAGE_SOURCE: ${IMAGE_SOURCE:-https://github.com/tylerterzigni/huntarr-public}
+        IMAGE_URL: ${IMAGE_URL:-https://github.com/tylerterzigni/huntarr-public}
+        VERSION: ${VERSION:-0.1.0}
+        REVISION: ${REVISION:-local}
     container_name: huntarr-app
     restart: unless-stopped
     depends_on:
@@ -43,10 +50,11 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-huntarr}:${POSTGRES_PASSWORD:-huntarr_secret_change_me}@db:5432/${POSTGRES_DB:-huntarr}
-      AUTH_SECRET: ${AUTH_SECRET}
+      # Hostname `db` is compose-network only — do not reuse a host-local DATABASE_URL here.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-huntarr}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-huntarr}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
-      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?set SETTINGS_ENCRYPTION_KEY in .env}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@huntarr.local}
       SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme}
