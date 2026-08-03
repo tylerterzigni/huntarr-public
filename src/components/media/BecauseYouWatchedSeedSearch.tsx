@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useClampedDropdownStyle } from "@/components/search/use-clamped-dropdown-style";
 import type { MediaType } from "@/types";
 
 type WatchSeedResult = {
@@ -28,6 +29,7 @@ export function BecauseYouWatchedSeedSearch({
   const [results, setResults] = useState<WatchSeedResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const dropdownStyle = useClampedDropdownStyle(containerRef, open && showResults);
 
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -188,7 +190,15 @@ export function BecauseYouWatchedSeedSearch({
       </div>
 
       {open && showResults && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-[min(100vw-2rem,320px)] rounded-lg border border-gray-300 bg-white shadow-xl">
+        <div
+          style={dropdownStyle}
+          className={cn(
+            "z-50 mt-2 rounded-lg border border-gray-300 bg-white shadow-xl",
+            "absolute top-full w-[min(calc(100vw-2rem),320px)]",
+            // Desktop: open under the trigger. Mobile uses fixed clamped coords via style.
+            "right-0 left-auto md:left-0 md:right-auto"
+          )}
+        >
           <div className="max-h-64 overflow-y-auto py-1">
             {loading && (
               <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
