@@ -24,6 +24,7 @@ export function SuppressNativeOverscrollRefresh() {
 
     const onTouchStart = (event: TouchEvent) => {
       if (!window.matchMedia("(max-width: 767px)").matches) return;
+      if (document.documentElement.hasAttribute("data-sheet-open")) return;
       if (window.scrollY > 0) return;
       if (shouldIgnoreTarget(event.target)) return;
       tracking = true;

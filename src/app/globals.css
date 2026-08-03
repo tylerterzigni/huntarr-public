@@ -63,6 +63,15 @@ html.pwa-standalone body {
   overscroll-behavior-y: none;
 }
 
+/* While a slide-over is open on phone, skip painting the poster wall underneath.
+   Closing the sheet over hundreds of GPU layers is a known WebKit OOM path. */
+@media (max-width: 767px) {
+  html[data-sheet-open] main {
+    content-visibility: hidden;
+    pointer-events: none;
+  }
+}
+
 html.pwa-standalone .horizontal-scroll-row {
   touch-action: pan-x pan-y;
 }

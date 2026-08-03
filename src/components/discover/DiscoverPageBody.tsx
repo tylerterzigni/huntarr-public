@@ -22,8 +22,8 @@ import {
 } from "@/lib/recommendations/constants";
 import type { MediaType, RecommendationItem } from "@/types";
 
-/** Keep mobile discover grids smaller — large decoded poster sets OOM WebKit on PTR. */
-const DISCOVER_MAX_PAGES_MOBILE = 20;
+/** Keep mobile discover grids smaller — large decoded poster sets OOM WebKit. */
+const DISCOVER_MAX_PAGES_MOBILE = 12;
 
 interface DiscoverPageBodyProps {
   title: string;
