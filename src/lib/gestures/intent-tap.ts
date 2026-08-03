@@ -8,6 +8,18 @@ export type IntentGestureState = {
   startY: number;
 };
 
+/** True when the pointer is over the element's native scrollbar (not content). */
+export function isScrollbarPointer(
+  element: HTMLElement,
+  clientX: number,
+  clientY: number
+): boolean {
+  const rect = element.getBoundingClientRect();
+  const x = clientX - rect.left - element.clientLeft;
+  const y = clientY - rect.top - element.clientTop;
+  return x < 0 || y < 0 || x >= element.clientWidth || y >= element.clientHeight;
+}
+
 export function createIntentGestureState(
   startX: number,
   startY: number

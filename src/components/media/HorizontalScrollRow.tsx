@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   createIntentGestureState,
+  isScrollbarPointer,
   updateIntentGestureMovement,
   type IntentGestureState,
 } from "@/lib/gestures/intent-tap";
@@ -58,6 +59,7 @@ export function HorizontalScrollRow({ children, className }: HorizontalScrollRow
     inputType: null,
   });
   const suppressClickRef = useRef(false);
+  const contentPressRef = useRef(false);
   const touchTrackingCleanupRef = useRef<(() => void) | null>(null);
   const velocityTrackerRef = useRef<VelocityTracker>(createVelocityTracker());
   const cancelMomentumRef = useRef<(() => void) | null>(null);
@@ -149,8 +151,10 @@ export function HorizontalScrollRow({ children, className }: HorizontalScrollRow
 
       if (state.moved) {
         suppressClickRef.current = true;
+        contentPressRef.current = false;
       } else if (clientX != null && clientY != null) {
         tryNavigate(clientX, clientY);
+        contentPressRef.current = false;
       }
 
       stopTouchTracking();
@@ -177,12 +181,20 @@ export function HorizontalScrollRow({ children, className }: HorizontalScrollRow
     function handleMouseDown(event: MouseEvent) {
       if (event.button !== 0) return;
 
-      const hitTarget = document.elementFromPoint(event.clientX, event.clientY);
-      if (isMediaActionTarget(event.target) || isMediaActionTarget(hitTarget)) {
+      if (isScrollbarPointer(scrollEl!, event.clientX, event.clientY)) {
+        contentPressRef.current = false;
         resetGesture();
         return;
       }
 
+      const hitTarget = document.elementFromPoint(event.clientX, event.clientY);
+      if (isMediaActionTarget(event.target) || isMediaActionTarget(hitTarget)) {
+        contentPressRef.current = false;
+        resetGesture();
+        return;
+      }
+
+      contentPressRef.current = true;
       beginGesture(event.clientX, event.clientY, "mouse");
     }
 
@@ -197,11 +209,17 @@ export function HorizontalScrollRow({ children, className }: HorizontalScrollRow
     function handleClick(event: MouseEvent) {
       if (suppressClickRef.current) {
         suppressClickRef.current = false;
+        contentPressRef.current = false;
         return;
       }
 
+      // Ignore scrollbar / ghost clicks that never pressed content.
+      if (!contentPressRef.current) return;
+      contentPressRef.current = false;
+
       if (!scrollEl) return;
       if (isMediaActionTarget(event.target)) return;
+      if (isScrollbarPointer(scrollEl, event.clientX, event.clientY)) return;
 
       const hitTarget = document.elementFromPoint(event.clientX, event.clientY);
       if (isMediaActionTarget(hitTarget)) return;

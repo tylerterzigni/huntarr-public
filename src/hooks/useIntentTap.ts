@@ -75,10 +75,13 @@ export function useIntentTap(onTap: () => void, enabled = true) {
 
       stopMoveTracking();
 
-      const moved = gestureRef.current?.moved ?? false;
+      const gesture = gestureRef.current;
       gestureRef.current = null;
 
-      if (moved) {
+      // Ignore clicks with no matching press (e.g. scrollbar release ghost clicks).
+      if (!gesture) return;
+
+      if (gesture.moved) {
         event.preventDefault();
         return;
       }
