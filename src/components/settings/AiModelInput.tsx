@@ -204,8 +204,8 @@ export function AiModelInput({
             setHighlightIndex(-1);
           }}
           onFocus={() => {
+            // Refresh history only — do not open on focus (dialog autofocus would pop the list).
             setHistory(mergeModelHistory(knownModels));
-            setOpen(true);
           }}
           onKeyDown={onKeyDown}
         />
