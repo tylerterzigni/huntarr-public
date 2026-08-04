@@ -130,7 +130,7 @@ export function HidePosterButton({
           disabled={loading}
           onClick={handleTriggerClick}
           onMouseDown={stopMediaActionBubble}
-          className="pointer-events-auto flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-black/80 text-white shadow-lg transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-70"
+          className="pointer-events-auto flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-black/80 text-white shadow-lg transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:opacity-70"
         >
           {loading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />

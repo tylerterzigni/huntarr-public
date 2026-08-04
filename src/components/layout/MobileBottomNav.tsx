@@ -39,7 +39,7 @@ export function MobileBottomNav() {
                       ? "text-white"
                       : "text-white/80 hover:text-white"
                     : active
-                      ? "text-indigo-600"
+                      ? "text-gray-800"
                       : "text-gray-500 hover:text-gray-900"
                 )}
               >

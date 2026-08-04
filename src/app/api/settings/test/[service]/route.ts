@@ -74,9 +74,10 @@ export async function GET(
         const provider = await getAIProviderById(session.user.id, id);
         if (!provider) throw new Error("AI provider not found");
         await testAIConnection(provider);
+        const modelSuffix = provider.model?.trim() ? ` · ${provider.model.trim()}` : "";
         return NextResponse.json({
           success: true,
-          message: `${provider.name} connection OK`,
+          message: `${provider.name}${modelSuffix} connection OK`,
         });
       }
       default:

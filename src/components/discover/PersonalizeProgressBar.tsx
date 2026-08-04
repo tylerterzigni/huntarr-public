@@ -31,7 +31,7 @@ export function PersonalizeProgressBar({
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200/80">
         <div
-          className={`h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-500 ${
+          className={`h-full rounded-full bg-gradient-to-r from-gray-400 to-gray-600 ${
             indeterminate || ranked === 0
               ? "w-1/3 animate-[personalize-indeterminate_1.2s_ease-in-out_infinite]"
               : "transition-[width] duration-500 ease-out"

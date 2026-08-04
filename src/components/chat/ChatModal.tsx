@@ -232,7 +232,7 @@ export function ChatModal({ open, onOpenChange }: ChatModalProps) {
                 key={`${msg.role}-${index}`}
                 className={`rounded-lg border p-3 text-sm text-gray-900 ${
                   msg.role === "user"
-                    ? "ml-8 border-indigo-300/50 bg-indigo-500/10 backdrop-blur-sm"
+                    ? "ml-8 border-gray-300/70 bg-gray-500/10 backdrop-blur-sm"
                     : "mr-8 border-gray-300/70 bg-white/40 backdrop-blur-md"
                 }`}
               >
@@ -244,7 +244,7 @@ export function ChatModal({ open, onOpenChange }: ChatModalProps) {
             ))}
             {loading && (
               <div className="mr-8 flex items-center gap-2 rounded-lg border border-gray-300/70 bg-white/40 p-3 text-sm text-gray-900 backdrop-blur-md">
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-indigo-600" />
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-gray-600" />
                 <span>Finding recommendations...</span>
               </div>
             )}

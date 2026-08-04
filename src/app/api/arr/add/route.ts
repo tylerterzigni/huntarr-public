@@ -23,6 +23,8 @@ const addSchema = z.object({
   qualityProfileId: z.number().optional(),
   rootFolder: z.string().optional(),
   languageProfileId: z.number().optional(),
+  /** Season numbers to monitor; omitted seasons (and specials unless listed) are unmonitored. */
+  seasons: z.array(z.number().int().min(0)).optional(),
 });
 
 export async function POST(request: Request) {
@@ -66,6 +68,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Series not found" }, { status: 404 });
       }
 
+      const selectedSeasons = new Set(data.seasons ?? []);
+      const lookupSeasons = Array.isArray(series.seasons)
+        ? (series.seasons as Array<Record<string, unknown>>)
+        : [];
+      const seasons =
+        selectedSeasons.size > 0
+          ? lookupSeasons.map((season) => {
+              const seasonNumber = Number(season.seasonNumber ?? 0);
+              return {
+                ...season,
+                monitored: selectedSeasons.has(seasonNumber),
+              };
+            })
+          : lookupSeasons.map((season) => ({
+              ...season,
+              // Default: monitor regular seasons only (not specials)
+              monitored: Number(season.seasonNumber ?? 0) > 0,
+            }));
+
       const payload = {
         ...series,
         qualityProfileId: data.qualityProfileId ?? instance.config.defaultQualityProfileId ?? 1,
@@ -73,8 +94,12 @@ export async function POST(request: Request) {
         languageProfileId: data.languageProfileId ?? instance.config.defaultLanguageProfileId ?? 1,
         seasonFolder: true,
         monitored: true,
+        seasons,
         seriesType: instance.config.defaultSeriesType ?? "standard",
-        addOptions: { searchForMissingEpisodes: true },
+        addOptions: {
+          searchForMissingEpisodes: true,
+          searchForCutoffUnmetEpisodes: false,
+        },
       };
 
       await addSonarrSeries(instance, payload);

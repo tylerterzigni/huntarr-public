@@ -47,7 +47,7 @@ const config: Config = {
           bg: "#e5e7eb",
           card: "#ffffff",
           hover: "#d1d5db",
-          accent: "#6366f1",
+          accent: "#4b5563",
         },
       },
       borderRadius: {

@@ -34,6 +34,7 @@ interface MediaInfoBoxProps {
   watchRegion: string;
   rtRatings?: RTRatings | null;
   inLibrary: boolean;
+  inArr?: boolean;
   inPlex: boolean;
   plexPlayUrl?: string | null;
   isHidden: boolean;
@@ -204,6 +205,7 @@ function MediaActionBar({
   title,
   mediaType,
   tmdbId,
+  inArr,
   inPlex,
   isHidden,
   isLiked,
@@ -215,6 +217,7 @@ function MediaActionBar({
   title: string;
   mediaType: MediaType;
   tmdbId: number;
+  inArr: boolean;
   inPlex: boolean;
   isHidden: boolean;
   isLiked: boolean;
@@ -223,28 +226,30 @@ function MediaActionBar({
   onAddToArr: () => void;
   onHideUser: () => void | Promise<void>;
 }) {
+  const requestMore = mediaType === "tv" && inArr;
+  const showRequest = !inPlex || requestMore;
+
   return (
     <div className="flex flex-col gap-2">
-      {inPlex ? (
-        <PlayOnPlexButton plexUrl={plexUrl} trailerUrl={trailerUrl} />
-      ) : (
-        <>
-          <button type="button" className={cn(requestBtn, "w-full")} onClick={onAddToArr}>
-            <Download className="h-5 w-5 shrink-0 text-gray-900" />
-            <span className="font-bold text-gray-900 underline">Request</span>
-          </button>
-          {trailerUrl && (
-            <a
-              href={trailerUrl}
-              target="_blank"
-              rel="noreferrer"
-              className={cn(glassBtn, "w-full")}
-            >
-              <Play className="h-4 w-4 shrink-0" />
-              Watch Trailer
-            </a>
-          )}
-        </>
+      {inPlex && <PlayOnPlexButton plexUrl={plexUrl} trailerUrl={trailerUrl} />}
+      {showRequest && (
+        <button type="button" className={cn(requestBtn, "w-full")} onClick={onAddToArr}>
+          <Download className="h-5 w-5 shrink-0 text-gray-900" />
+          <span className="font-bold text-gray-900 underline">
+            {requestMore ? "Request More" : "Request"}
+          </span>
+        </button>
+      )}
+      {!inPlex && trailerUrl && (
+        <a
+          href={trailerUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={cn(glassBtn, "w-full")}
+        >
+          <Play className="h-4 w-4 shrink-0" />
+          Watch Trailer
+        </a>
       )}
       <div className="flex gap-2">
         {!isHidden && (
@@ -273,6 +278,7 @@ export function MediaInfoBox({
   details,
   watchRegion,
   rtRatings,
+  inArr = false,
   inPlex,
   plexPlayUrl,
   isHidden,
@@ -330,6 +336,7 @@ export function MediaInfoBox({
           title={title}
           mediaType={mediaType}
           tmdbId={tmdbId}
+          inArr={inArr}
           inPlex={inPlex}
           isHidden={isHidden}
           isLiked={isLiked}

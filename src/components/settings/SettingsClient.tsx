@@ -18,6 +18,8 @@ import { RecommendationsSettings } from "@/components/settings/RecommendationsSe
 import { HomePageSettings } from "@/components/settings/HomePageSettings";
 import { SyncProgressBar } from "@/components/settings/SyncProgressBar";
 import { ListItemSearch } from "@/components/settings/ListItemSearch";
+import { AiModelInput } from "@/components/settings/AiModelInput";
+import { rememberModel } from "@/lib/ai/model-history";
 import type { SyncJobSnapshot } from "@/lib/integrations/sync-job-types";
 import type { HomeRowId } from "@/lib/home/row-order";
 
@@ -103,6 +105,18 @@ export function SettingsClient() {
   const announcedSyncJobs = useRef(new Set<string>());
   const syncStatusHydrated = useRef(false);
   const [aiTestConfirm, setAiTestConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [aiChange, setAiChange] = useState<{
+    id: string;
+    name: string;
+    provider: string;
+    model: string;
+    priority: number;
+    enabled: boolean;
+    baseUrl?: string;
+  } | null>(null);
+  const [aiChangeModel, setAiChangeModel] = useState("");
+  const [aiChangePriority, setAiChangePriority] = useState("");
+  const [aiChangeSaving, setAiChangeSaving] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -260,6 +274,7 @@ export function SettingsClient() {
   }
 
   async function saveAI(form: FormData, id?: string) {
+    const model = String(form.get("model") ?? "").trim();
     await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -271,14 +286,71 @@ export function SettingsClient() {
           name: form.get("name"),
           apiKey: form.get("apiKey") || undefined,
           baseUrl: form.get("baseUrl") || undefined,
-          model: form.get("model"),
+          model,
           priority: Number(form.get("priority")) || 0,
           enabled: form.get("enabled") !== "off",
         },
       }),
     });
+    rememberModel(model);
     setMessage("AI provider saved");
     load();
+  }
+
+  function openAIChange(p: SettingsData["aiProviders"][number]) {
+    setAiChange({
+      id: p.id,
+      name: p.name,
+      provider: p.provider,
+      model: p.model,
+      priority: p.priority,
+      enabled: p.enabled,
+      baseUrl: p.baseUrl,
+    });
+    setAiChangeModel("");
+    setAiChangePriority("");
+  }
+
+  async function confirmAIChange() {
+    if (!aiChange) return;
+
+    const nextModel = aiChangeModel.trim() || aiChange.model;
+    const priorityInput = aiChangePriority.trim();
+    const nextPriority =
+      priorityInput === ""
+        ? aiChange.priority
+        : Number(priorityInput);
+
+    if (priorityInput !== "" && !Number.isFinite(nextPriority)) {
+      setMessage("Priority must be a number");
+      return;
+    }
+
+    setAiChangeSaving(true);
+    try {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          section: "ai",
+          data: {
+            id: aiChange.id,
+            provider: aiChange.provider,
+            name: aiChange.name,
+            model: nextModel,
+            priority: nextPriority,
+            enabled: aiChange.enabled,
+            baseUrl: aiChange.baseUrl || undefined,
+          },
+        }),
+      });
+      rememberModel(nextModel);
+      setAiChange(null);
+      setMessage("AI provider updated");
+      await load();
+    } finally {
+      setAiChangeSaving(false);
+    }
   }
 
   async function saveRecommendations(keywords: string[]) {
@@ -419,6 +491,11 @@ export function SettingsClient() {
     [sortedLikedItems]
   );
 
+  const knownAiModels = useMemo(
+    () => (data?.aiProviders ?? []).map((provider) => provider.model),
+    [data?.aiProviders]
+  );
+
   useEffect(() => {
     if (!highlightedHideId) return;
     const timer = window.setTimeout(() => setHighlightedHideId(null), 2500);
@@ -480,7 +557,7 @@ export function SettingsClient() {
     <div className="px-4 md:px-8 py-8 max-w-4xl">
       <h1 className="text-2xl font-bold mb-2">Settings</h1>
       {message && (
-        <p className="mb-4 text-sm text-indigo-400 bg-indigo-400/10 rounded p-2">{message}</p>
+        <p className="mb-4 text-sm text-gray-700 bg-gray-500/10 rounded p-2">{message}</p>
       )}
 
       <Tabs defaultValue="general">
@@ -558,7 +635,7 @@ export function SettingsClient() {
                       href="https://www.omdbapi.com/apikey.aspx"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-indigo-400 hover:underline"
+                      className="text-gray-700 hover:underline"
                     >
                       omdbapi.com
                     </a>
@@ -743,8 +820,16 @@ export function SettingsClient() {
                   <div>
                     <p className="font-medium">{p.name} ({p.provider})</p>
                     <p className="text-sm text-muted-foreground">Model: {p.model}</p>
+                    <p className="text-sm text-muted-foreground">Priority: {p.priority}</p>
                   </div>
                   <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openAIChange(p)}
+                    >
+                      Change
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -765,6 +850,74 @@ export function SettingsClient() {
               </CardContent>
             </Card>
           ))}
+          <Dialog
+            open={!!aiChange}
+            onOpenChange={(open) => {
+              if (!open) setAiChange(null);
+            }}
+          >
+            <DialogContent className="border-gray-300/70 bg-white/40 text-gray-900 shadow-none backdrop-blur-md sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-gray-900">
+                  Change {aiChange?.name ?? "AI provider"}
+                </DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-gray-700">
+                Leave a field blank to keep its current value.
+              </p>
+              <div className="space-y-4 pt-1">
+                <div>
+                  <Label htmlFor="ai-change-model">Model</Label>
+                  <AiModelInput
+                    id="ai-change-model"
+                    value={aiChangeModel}
+                    onChange={setAiChangeModel}
+                    placeholder={aiChange?.model ?? "Model"}
+                    knownModels={knownAiModels}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="ai-change-priority">Priority</Label>
+                  <Input
+                    id="ai-change-priority"
+                    type="number"
+                    value={aiChangePriority}
+                    onChange={(e) => setAiChangePriority(e.target.value)}
+                    placeholder={
+                      aiChange != null ? String(aiChange.priority) : "Priority"
+                    }
+                    className="mt-1"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Lower number = tried first.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAiChange(null)}
+                  disabled={aiChangeSaving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="glass"
+                  onClick={() => void confirmAIChange()}
+                  disabled={aiChangeSaving}
+                >
+                  {aiChangeSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Update"
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <Dialog
             open={!!aiTestConfirm}
             onOpenChange={(open) => {
@@ -818,8 +971,15 @@ export function SettingsClient() {
                   <Input name="baseUrl" placeholder="http://host.docker.internal:11434" className="mt-1" />
                 </div>
                 <div>
-                  <Label>Model</Label>
-                  <Input name="model" placeholder="openai/gpt-4o" className="mt-1" required />
+                  <Label htmlFor="ai-add-model">Model</Label>
+                  <AiModelInput
+                    id="ai-add-model"
+                    name="model"
+                    placeholder="openai/gpt-4o"
+                    required
+                    knownModels={knownAiModels}
+                    className="mt-1"
+                  />
                 </div>
                 <div>
                   <Label>Priority</Label>
@@ -1058,7 +1218,7 @@ function IntegrationCard({
             <div>
               <p className="font-medium">{instance.name}</p>
               <p className="text-sm text-muted-foreground">{instance.baseUrl}</p>
-              {instance.isDefault && <span className="text-xs text-indigo-400">Default</span>}
+              {instance.isDefault && <span className="text-xs text-gray-600">Default</span>}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setEditing(true)}>

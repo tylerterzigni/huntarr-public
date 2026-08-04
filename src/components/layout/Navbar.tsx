@@ -113,7 +113,7 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
         >
           <LibraryWatchedToggle lightNav={isDetailPage} />
           {onChatOpen && (
-            <Button variant="outline" size="sm" onClick={onChatOpen} className="border-indigo-500/50">
+            <Button variant="outline" size="sm" onClick={onChatOpen}>
               <MessageSquare className="h-4 w-4 mr-1" />
               AI Chat
             </Button>

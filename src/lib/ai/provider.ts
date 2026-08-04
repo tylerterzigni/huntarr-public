@@ -67,7 +67,7 @@ export async function getAIProviderById(
   };
 }
 
-/** Validates a saved AI provider key/endpoint. OpenAI/OpenRouter use a free models list; Anthropic uses a 1-token ping; Ollama checks /api/tags. */
+/** Validates a saved AI provider key/endpoint and configured model when possible. OpenAI/OpenRouter check the models list; Anthropic uses a 1-token ping; Ollama checks /api/tags. */
 export async function testAIConnection(provider: AIProvider): Promise<void> {
   if (provider.provider === "ollama") {
     const base = (provider.baseUrl ?? "http://host.docker.internal:11434").replace(/\/$/, "");
@@ -97,6 +97,19 @@ export async function testAIConnection(provider: AIProvider): Promise<void> {
         : "https://openrouter.ai/api/v1/models";
     const res = await fetch(modelsUrl, { headers });
     if (!res.ok) throw new Error(`${provider.provider} error: ${await res.text()}`);
+
+    const configuredModel = provider.model?.trim();
+    if (configuredModel) {
+      const data = (await res.json()) as { data?: Array<{ id?: string }> };
+      const ids = (data.data ?? [])
+        .map((m) => m.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      if (ids.length > 0 && !ids.includes(configuredModel)) {
+        throw new Error(
+          `Model "${configuredModel}" not found on ${provider.provider === "openrouter" ? "OpenRouter" : "OpenAI"}`
+        );
+      }
+    }
     return;
   }
 

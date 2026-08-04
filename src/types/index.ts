@@ -114,4 +114,6 @@ export interface ArrAddRequest {
   languageProfileId?: number;
   seriesType?: string;
   monitor?: string;
+  /** Season numbers to monitor when adding a series (specials = 0 omitted unless included). */
+  seasons?: number[];
 }

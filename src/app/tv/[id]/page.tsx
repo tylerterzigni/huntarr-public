@@ -6,6 +6,7 @@ import { TitleDetailClient } from "@/components/media/TitleDetailClient";
 import { TitleDetailRelated } from "@/components/media/TitleDetailRelated";
 import { getDetailRelatedItems } from "@/lib/integrations/tmdb/related";
 import { getLibraryIds, getPlexLibraryIds, getWatchedIds } from "@/lib/recommendations/filters";
+import { getArrLibraryIds } from "@/lib/integrations/arr/library";
 import { isHidden } from "@/lib/hide-list";
 import { isMediaLiked } from "@/lib/liked-list";
 import { getPlexPlayUrl } from "@/lib/integrations/plex/play-url";
@@ -37,8 +38,11 @@ export default async function TvDetailPage({ params }: PageProps) {
     );
   }
 
-  const libraryIds = await getLibraryIds();
-  const plexIds = await getPlexLibraryIds();
+  const [libraryIds, plexIds, arrIds] = await Promise.all([
+    getLibraryIds(),
+    getPlexLibraryIds(),
+    getArrLibraryIds().catch(() => new Set<string>()),
+  ]);
   const [prefs] = await db
     .select()
     .from(userPreferences)
@@ -63,6 +67,7 @@ export default async function TvDetailPage({ params }: PageProps) {
     [];
   const episodeAvailability = Array.from(await getSonarrEpisodeAvailability(tmdbId));
   const inPlex = plexIds.has(`tv:${tmdbId}`);
+  const inArr = arrIds.has(`tv:${tmdbId}`);
   const plexPlayUrl = inPlex ? await getPlexPlayUrl(tmdbId, "tv", title) : null;
   const { recommendations, similar } = await getDetailRelatedItems(
     details,
@@ -79,6 +84,7 @@ export default async function TvDetailPage({ params }: PageProps) {
         mediaType="tv"
         tmdbId={tmdbId}
         inLibrary={libraryIds.has(`tv:${tmdbId}`)}
+        inArr={inArr}
         inPlex={inPlex}
         plexPlayUrl={plexPlayUrl}
         watched={watchedIds.has(`tv:${tmdbId}`)}

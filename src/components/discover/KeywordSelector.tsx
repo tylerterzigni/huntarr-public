@@ -87,7 +87,7 @@ export function KeywordSelector({
           {selected.map((item) => (
             <span
               key={item.id}
-              className="inline-flex items-center gap-1 rounded-full bg-indigo-600/30 px-2.5 py-1 text-xs"
+              className="inline-flex items-center gap-1 rounded-full bg-gray-500/30 px-2.5 py-1 text-xs"
             >
               {item.name}
               <button

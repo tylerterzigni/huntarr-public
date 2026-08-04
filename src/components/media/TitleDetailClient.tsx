@@ -18,6 +18,8 @@ interface TitleDetailClientProps {
   mediaType: MediaType;
   tmdbId: number;
   inLibrary: boolean;
+  /** True when the title is already in Radarr/Sonarr. */
+  inArr?: boolean;
   inPlex: boolean;
   plexPlayUrl?: string | null;
   watched: boolean;
@@ -35,6 +37,7 @@ export function TitleDetailClient({
   mediaType,
   tmdbId,
   inLibrary,
+  inArr = false,
   inPlex,
   plexPlayUrl,
   watched,
@@ -185,6 +188,7 @@ export function TitleDetailClient({
             watchRegion={watchRegion}
             rtRatings={rtRatings}
             inLibrary={inLibrary}
+            inArr={inArr}
             inPlex={inPlex}
             plexPlayUrl={plexPlayUrl}
             isHidden={isHidden}
@@ -203,6 +207,9 @@ export function TitleDetailClient({
         tmdbId={tmdbId}
         mediaType={mediaType}
         title={title}
+        backdropPath={details.backdrop_path as string | null | undefined}
+        seasons={seasons}
+        episodeAvailability={episodeAvailability}
       />
     </>
   );

@@ -8,13 +8,15 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        default:
+          "border border-gray-300/70 bg-gray-300/55 text-gray-800 shadow-none backdrop-blur-md hover:border-gray-400 hover:bg-gray-300/70 hover:text-gray-900",
         glass: glassBtn,
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-gray-300/70 bg-gray-300/55 text-gray-800 shadow-none backdrop-blur-md hover:border-gray-400 hover:bg-gray-300/70 hover:text-gray-900",
+        outline:
+          "border border-gray-300/70 bg-gray-300/55 text-gray-800 shadow-none backdrop-blur-md hover:border-gray-400 hover:bg-gray-300/70 hover:text-gray-900",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        link: "text-gray-800 underline-offset-4 hover:underline",
       },
       size: {
         default: "h-10 px-4 py-2",
