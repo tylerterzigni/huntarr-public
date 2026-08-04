@@ -79,6 +79,7 @@ import {
   prioritizeHomeLocaleItems,
   withUsUkEnglishDiscoverFilters,
 } from "./locale-priority";
+import { fetchSimilarAndRecommendedFromSeed } from "./similar-from-seed";
 import type { MediaType, RecommendationItem, SearchCriteria, TmdbMediaItem } from "@/types";
 
 type PrefetchedBrowse = {
@@ -2310,35 +2311,13 @@ export async function getBecauseYouWatched(
     seed = seeds[seedIndex];
   }
 
-  const [similarPage1, similarPage2, recsPage1, recsPage2] = await Promise.all([
-    getSimilar(seed.mediaType, seed.tmdbId, 1),
-    getSimilar(seed.mediaType, seed.tmdbId, 2).catch(() => ({ results: [] as TmdbMediaItem[] })),
-    getRecommendations(seed.mediaType, seed.tmdbId, 1),
-    getRecommendations(seed.mediaType, seed.tmdbId, 2).catch(() => ({
-      results: [] as TmdbMediaItem[],
-    })),
-  ]);
-
-  const [hiddenIds, statusSets] = await Promise.all([
+  const [seedRelated, hiddenIds, statusSets] = await Promise.all([
+    fetchSimilarAndRecommendedFromSeed(seed.mediaType, seed.tmdbId, { limit }),
     getHiddenIds(userId),
     getStatusIdSets(userId, usernames),
   ]);
-  const seen = new Set<string>();
-  const rawItems = prioritizeHomeLocaleItems(
-    [
-      ...similarPage1.results,
-      ...recsPage1.results,
-      ...similarPage2.results,
-      ...recsPage2.results,
-    ].filter((item) => {
-      const key = mediaItemKey(item);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return !hiddenIds.has(key) && key !== `${seed.mediaType}:${seed.tmdbId}`;
-    }),
-    limit
-  );
 
+  const rawItems = seedRelated.items.filter((item) => !hiddenIds.has(mediaItemKey(item)));
   const items = enrichItemsWithStatus(rawItems, statusSets);
 
   return {

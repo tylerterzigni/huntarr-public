@@ -3,18 +3,24 @@ import { extractMoreLikeTitle } from "@/lib/ai/parse-chat-response";
 import { mediaItemKey } from "@/lib/integrations/tmdb/helpers";
 import type { RecommendationItem, SearchCriteria } from "@/types";
 
-const MORE_RESULTS_PATTERNS = [
+/** Pure pagination of the prior search — no new title/person/theme. */
+const MORE_RESULTS_PATTERNS: RegExp[] = [
+  /^(?:(?:please\s+)?(?:can\s+you\s+)?)?(?:show|find|give|get|bring)\s+(?:me\s+)?more(?:\s+(?:results?|titles?|options?|recs?|recommendations?))?[.!?]*$/i,
+  /^(?:(?:please\s+)?(?:can\s+you\s+)?)?(?:show|find|give|get)\s+(?:me\s+)?more\s+like\s+(?:this|that|these|those|it|them)[.!?]*$/i,
+  /^(?:more\s+like\s+(?:this|that|these|those|it|them))[.!?]*$/i,
   /^(?:show\s+(?:me\s+)?)?more(?:\s+results?)?[.!?]*$/i,
   /^(?:show\s+(?:me\s+)?)?(?:more\s+results?|see\s+more|load\s+more)[.!?]*$/i,
   /^(?:give\s+me\s+)?(?:some\s+)?more(?:\s+results?)?[.!?]*$/i,
+  /^(?:find\s+(?:me\s+)?)?(?:some\s+)?more(?:\s+results?)?[.!?]*$/i,
   /^(?:any\s+)?more(?:\s+results?)?\??[.!?]*$/i,
-  /^(?:show\s+(?:me\s+)?)?(?:another|additional)\s+(?:page|batch|set)[.!?]*$/i,
+  /^(?:show\s+(?:me\s+)?)?(?:another|additional)\s+(?:page|batch|set)(?:\s+of\s+results?)?[.!?]*$/i,
 ];
 
+/** “More shows like X” when X is a real title — may refresh the anchor, then paginate. */
 const MORE_LIKE_CONTINUATION_PATTERNS = [
   /\bmore\b.*\b(?:shows?|series|movies?|films?)\s+(?:like|similar to)\b/i,
   /\b(?:shows?|series|movies?|films?)\s+(?:like|similar to)\b.*\bmore\b/i,
-  /\bmore\b.*\b(?:like|similar to)\b/i,
+  /\bmore\b.*\b(?:like|similar to)\b(?!\s+(?:this|that|these|those|it|them)\b)/i,
 ];
 
 const MORE_PERSON_CONTINUATION_PATTERNS = [
@@ -89,9 +95,17 @@ export function buildContinuationReply(criteria: SearchCriteria): string {
   return "Here are more titles that match your request.";
 }
 
+const PRONOUN_MORE_LIKE_TITLE =
+  /^(?:this|that|these|those|it|them)$/i;
+
 export function buildContinuationCriteriaPatch(message: string): Record<string, unknown> {
+  // “More like this/that” means continue the prior search — do not resolve “this” as a title.
+  if (isMoreResultsRequest(message)) return {};
+
   const likeTitle = extractMoreLikeTitle(message);
-  if (likeTitle) return { moreLikeTitle: likeTitle };
+  if (likeTitle && !PRONOUN_MORE_LIKE_TITLE.test(likeTitle)) {
+    return { moreLikeTitle: likeTitle };
+  }
 
   const person = extractPersonFromMessage(message);
   if (person) {

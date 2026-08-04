@@ -113,7 +113,7 @@ export function extractMoreLikeTitle(message: string): string | null {
 
     const candidate = match[1].trim().replace(/[?.!,]+$/, "").trim();
     const genericPhrases =
-      /^(chick flick(s)?|rom-?com(s)?|sitcom(s)?|horror(s)?|comed(y|ies)|drama(s)?|action(s)?|sci-?fi(s)?|thriller(s)?|show(s)?|movie(s)?|series|the)$/i;
+      /^(chick flick(s)?|rom-?com(s)?|sitcom(s)?|horror(s)?|comed(y|ies)|drama(s)?|action(s)?|sci-?fi(s)?|thriller(s)?|show(s)?|movie(s)?|series|the|this|that|these|those|it|them)$/i;
     if (candidate.length <= 2 || genericPhrases.test(candidate)) continue;
     return candidate;
   }
