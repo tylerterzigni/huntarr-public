@@ -14,10 +14,16 @@ import type { SearchPreviewItem } from "@/lib/search/run-search";
 
 interface NavbarSearchProps {
   lightNav?: boolean;
+  /** Continuous fg color for detail-page contrast fade (overrides lightNav text color). */
+  textColor?: string;
   onOpenChange?: (open: boolean) => void;
 }
 
-export function NavbarSearch({ lightNav = false, onOpenChange }: NavbarSearchProps) {
+export function NavbarSearch({
+  lightNav = false,
+  textColor,
+  onOpenChange,
+}: NavbarSearchProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -179,13 +185,14 @@ export function NavbarSearch({ lightNav = false, onOpenChange }: NavbarSearchPro
     >
       <form
         onSubmit={handleSearch}
+        style={textColor ? { color: textColor } : undefined}
         className={cn(
-          "relative flex min-w-0 items-center rounded-md text-sm font-medium transition-colors",
+          "relative flex min-w-0 items-center rounded-md text-sm font-medium transition-[color,background-color] duration-300",
           open && "w-full",
           lightNav
             ? open
-              ? "bg-white/20 text-white"
-              : "text-white [@media(hover:hover)_and_(pointer:fine)]:hover:bg-white/10"
+              ? "bg-white/20"
+              : "[@media(hover:hover)_and_(pointer:fine)]:hover:bg-white/10"
             : open
               ? "bg-gray-900/10 text-gray-900"
               : "text-gray-700 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-gray-900/5 [@media(hover:hover)_and_(pointer:fine)]:hover:text-gray-900"

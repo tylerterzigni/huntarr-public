@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { backdropUrl, formatRuntime, formatYear, posterUrl } from "@/lib/utils";
 import { ArrAddModal } from "@/components/arr/ArrAddModal";
@@ -8,6 +8,7 @@ import { CastCrewSection } from "@/components/media/CastCrewSection";
 import { KeywordsSection } from "@/components/media/KeywordsSection";
 import { MediaInfoBox } from "@/components/media/MediaInfoBox";
 import { SeasonsSection, type TmdbSeasonSummary } from "@/components/media/SeasonsSection";
+import { useDetailNavContrast } from "@/components/providers/DetailNavContrastProvider";
 import { dispatchTitleHidden } from "@/lib/hide-list/client";
 import { extractVideos, getVideoWatchUrl, pickBestTrailer } from "@/lib/integrations/tmdb/trailer";
 import type { MediaType, TmdbCreditPerson } from "@/types";
@@ -51,9 +52,26 @@ export function TitleDetailClient({
   episodeAvailability = [],
 }: TitleDetailClientProps) {
   const [arrOpen, setArrOpen] = useState(false);
+  const { reportBackdropUrl, reportBackdropElement } = useDetailNavContrast();
   const title = (details.title ?? details.name) as string;
   const overview = details.overview as string;
   const backdrop = backdropUrl(details.backdrop_path as string);
+
+  useEffect(() => {
+    reportBackdropUrl(backdrop);
+    return () => {
+      reportBackdropUrl(null);
+      reportBackdropElement(null);
+    };
+  }, [backdrop, reportBackdropUrl, reportBackdropElement]);
+
+  const setBackdropNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      reportBackdropElement(node);
+    },
+    [reportBackdropElement]
+  );
+
   const runtime = details.runtime as number | undefined;
   const episodeRunTime = (details.episode_run_time as number[])?.[0];
   const lastEpisodeRuntime = (details.last_episode_to_air as { runtime?: number } | undefined)
@@ -86,7 +104,10 @@ export function TitleDetailClient({
   return (
     <>
       {backdrop && (
-        <div className="relative -mt-[7.5rem] pt-[7.5rem] md:-mt-20 md:pt-20 h-[340px] md:h-[440px] lg:h-[min(42vh,540px)] w-full overflow-hidden bg-seerr-bg">
+        <div
+          ref={setBackdropNode}
+          className="relative -mt-[7.5rem] pt-[7.5rem] md:-mt-20 md:pt-20 h-[340px] md:h-[440px] lg:h-[min(42vh,540px)] w-full overflow-hidden bg-seerr-bg"
+        >
           <Image
             src={backdrop}
             alt=""

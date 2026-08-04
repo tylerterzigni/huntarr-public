@@ -21,7 +21,7 @@ export function UserAccountMenu({ username, lightNav = false }: UserAccountMenuP
           <button
             type="button"
             className={cn(
-              "hidden items-center gap-1 rounded-md px-2 py-1.5 text-sm transition-colors sm:inline-flex",
+              "hidden items-center gap-1 rounded-md px-2 py-1.5 text-sm transition-colors duration-300 sm:inline-flex",
               lightNav
                 ? "text-white hover:bg-white/10"
                 : "text-gray-600 hover:bg-gray-900/5 hover:text-gray-900"

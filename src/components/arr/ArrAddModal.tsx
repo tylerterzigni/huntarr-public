@@ -273,7 +273,7 @@ export function ArrAddModal({
               />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-seerr-bg via-seerr-bg/70 to-black/40" />
-            <div className="relative z-10 px-6 pb-4 pt-8 pr-12">
+            <div className="pointer-events-none relative z-10 px-6 pb-4 pt-8 pr-12">
               <DialogTitle className="text-2xl font-bold text-gray-800">
                 {isTv ? "Request Series" : "Request Movie"}
               </DialogTitle>

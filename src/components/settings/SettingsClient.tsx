@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2, RefreshCw, Pencil } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { RecommendationsSettings } from "@/components/settings/RecommendationsSettings";
@@ -117,6 +118,14 @@ export function SettingsClient() {
   const [aiChangeModel, setAiChangeModel] = useState("");
   const [aiChangePriority, setAiChangePriority] = useState("");
   const [aiChangeSaving, setAiChangeSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    title: string;
+    description: string;
+    confirmLabel?: string;
+    loadingLabel?: string;
+    action: () => Promise<void>;
+  } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -463,6 +472,27 @@ export function SettingsClient() {
     load();
   }
 
+  function requestDeleteConfirm(confirm: {
+    title: string;
+    description: string;
+    confirmLabel?: string;
+    loadingLabel?: string;
+    action: () => Promise<void>;
+  }) {
+    setDeleteConfirm(confirm);
+  }
+
+  async function confirmPendingDelete() {
+    if (!deleteConfirm || deleteBusy) return;
+    setDeleteBusy(true);
+    try {
+      await deleteConfirm.action();
+      setDeleteConfirm(null);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   const sortedHideItems = useMemo(() => sortByTitle(hideItems), [hideItems]);
   const sortedLikedItems = useMemo(() => sortByTitle(likedItems), [likedItems]);
   const hideTotalPages = totalPages(sortedHideItems.length, LIST_PAGE_SIZE);
@@ -678,7 +708,14 @@ export function SettingsClient() {
               instance={inst}
               onSave={(fd) => saveIntegration("radarr", fd, inst.id)}
               onTest={() => testConnection("radarr", inst.id)}
-              onDelete={() => deleteIntegration(inst.id)}
+              onDelete={() =>
+                requestDeleteConfirm({
+                  title: `Delete ${inst.name}?`,
+                  description:
+                    "This removes the Radarr connection from Huntarr. Your Radarr server itself is not affected.",
+                  action: () => deleteIntegration(inst.id),
+                })
+              }
               testing={testing === "radarr" + inst.id}
             />
           ))}
@@ -692,7 +729,14 @@ export function SettingsClient() {
               instance={inst}
               onSave={(fd) => saveIntegration("sonarr", fd, inst.id)}
               onTest={() => testConnection("sonarr", inst.id)}
-              onDelete={() => deleteIntegration(inst.id)}
+              onDelete={() =>
+                requestDeleteConfirm({
+                  title: `Delete ${inst.name}?`,
+                  description:
+                    "This removes the Sonarr connection from Huntarr. Your Sonarr server itself is not affected.",
+                  action: () => deleteIntegration(inst.id),
+                })
+              }
               testing={testing === "sonarr" + inst.id}
             />
           ))}
@@ -707,7 +751,14 @@ export function SettingsClient() {
               isPlex
               onSave={(fd) => saveIntegration("plex", fd, inst.id)}
               onTest={() => testConnection("plex")}
-              onDelete={() => deleteIntegration(inst.id)}
+              onDelete={() =>
+                requestDeleteConfirm({
+                  title: `Delete ${inst.name}?`,
+                  description:
+                    "This removes the Plex connection from Huntarr. Your Plex server itself is not affected.",
+                  action: () => deleteIntegration(inst.id),
+                })
+              }
               testing={testing === "plex"}
             />
           ))}
@@ -746,7 +797,14 @@ export function SettingsClient() {
               instance={inst}
               onSave={(fd) => saveIntegration("tautulli", fd, inst.id)}
               onTest={() => testConnection("tautulli")}
-              onDelete={() => deleteIntegration(inst.id)}
+              onDelete={() =>
+                requestDeleteConfirm({
+                  title: `Delete ${inst.name}?`,
+                  description:
+                    "This removes the Tautulli connection from Huntarr. Your Tautulli server itself is not affected.",
+                  action: () => deleteIntegration(inst.id),
+                })
+              }
               testing={testing === "tautulli"}
             />
           ))}
@@ -842,7 +900,19 @@ export function SettingsClient() {
                         "Test"
                       )}
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => deleteAI(p.id)} aria-label={`Delete ${p.name}`}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        requestDeleteConfirm({
+                          title: `Delete ${p.name}?`,
+                          description:
+                            "This permanently removes the AI provider and its stored API key from Huntarr.",
+                          action: () => deleteAI(p.id),
+                        })
+                      }
+                      aria-label={`Delete ${p.name}`}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -856,7 +926,10 @@ export function SettingsClient() {
               if (!open) setAiChange(null);
             }}
           >
-            <DialogContent className="border-gray-300/70 bg-white/40 text-gray-900 shadow-none backdrop-blur-md sm:max-w-md">
+            <DialogContent
+              className="border-gray-300/70 bg-white/40 text-gray-900 shadow-none backdrop-blur-md sm:max-w-md"
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
               <DialogHeader>
                 <DialogTitle className="text-gray-900">
                   Change {aiChange?.name ?? "AI provider"}
@@ -1033,7 +1106,21 @@ export function SettingsClient() {
                           <span className="font-medium">{item.title}</span>
                           <span className="text-muted-foreground ml-2 capitalize">{item.mediaType} · {item.scope}</span>
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => removeHideItem(item.id)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Remove ${item.title} from hide list`}
+                          onClick={() =>
+                            requestDeleteConfirm({
+                              title: `Remove ${item.title}?`,
+                              description:
+                                "This removes the title from your hide list. It may appear again in browse and recommendations.",
+                              confirmLabel: "Remove",
+                              loadingLabel: "Removing...",
+                              action: () => removeHideItem(item.id),
+                            })
+                          }
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -1093,7 +1180,21 @@ export function SettingsClient() {
                           <span className="font-medium">{item.title}</span>
                           <span className="text-muted-foreground ml-2 capitalize">{item.kind}</span>
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => removeLikedItem(item.id)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Remove ${item.title} from liked list`}
+                          onClick={() =>
+                            requestDeleteConfirm({
+                              title: `Remove ${item.title}?`,
+                              description:
+                                "This removes the item from your liked list. It will no longer influence personalized recommendations.",
+                              confirmLabel: "Remove",
+                              loadingLabel: "Removing...",
+                              action: () => removeLikedItem(item.id),
+                            })
+                          }
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -1111,6 +1212,19 @@ export function SettingsClient() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) setDeleteConfirm(null);
+        }}
+        title={deleteConfirm?.title ?? "Confirm delete"}
+        description={deleteConfirm?.description ?? ""}
+        confirmLabel={deleteConfirm?.confirmLabel ?? "Delete"}
+        loading={deleteBusy}
+        loadingLabel={deleteConfirm?.loadingLabel ?? "Deleting..."}
+        onConfirm={() => void confirmPendingDelete()}
+      />
     </div>
   );
 }
@@ -1227,7 +1341,7 @@ function IntegrationCard({
               <Button variant="outline" size="sm" onClick={onTest}>
                 {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Test"}
               </Button>
-              <Button variant="ghost" size="sm" onClick={onDelete}>
+              <Button variant="ghost" size="sm" onClick={onDelete} aria-label={`Delete ${instance.name}`}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>

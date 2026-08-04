@@ -2,13 +2,7 @@
 
 import { useState } from "react";
 import { EyeOff, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { dispatchTitleHidden } from "@/lib/hide-list/client";
 import { cn } from "@/lib/utils";
 import type { MediaType } from "@/types";
@@ -104,13 +98,6 @@ export function HidePosterButton({
     }
   }
 
-  function handleConfirmHideClick(event: React.MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    guardPosterNavigation();
-    void confirmHide();
-  }
-
   return (
     <>
       <div
@@ -140,46 +127,20 @@ export function HidePosterButton({
         </button>
       </div>
 
-      <Dialog open={confirmOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent
-          className="border-gray-300/70 bg-white/40 text-gray-900 shadow-none backdrop-blur-md sm:max-w-md"
-          onCloseAutoFocus={(event) => event.preventDefault()}
-        >
-          <DialogHeader>
-            <DialogTitle className="text-gray-900">Hide {title}?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-gray-700">
-            This will add the title to your personal blocklist. Hidden titles no longer appear in
-            browse and recommendations. You can remove them from Settings → Hide List.
-          </p>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={loading}
-              onClick={() => handleDialogOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="glass"
-              disabled={loading}
-              onPointerDown={stopMediaActionBubble}
-              onClick={handleConfirmHideClick}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Hiding...
-                </>
-              ) : (
-                "Hide"
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={handleDialogOpenChange}
+        title={`Hide ${title}?`}
+        description="This will add the title to your personal blocklist. Hidden titles no longer appear in browse and recommendations. You can remove them from Settings → Hide List."
+        confirmLabel="Hide"
+        loading={loading}
+        loadingLabel="Hiding..."
+        onConfirm={() => {
+          guardPosterNavigation();
+          void confirmHide();
+        }}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      />
     </>
   );
 }

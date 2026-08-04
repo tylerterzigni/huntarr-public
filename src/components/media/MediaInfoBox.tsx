@@ -3,13 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Image from "next/image";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   ImdbLinkIcon,
   JustWatchLinkIcon,
@@ -43,7 +37,7 @@ interface MediaInfoBoxProps {
   trailerUrl: string | null;
   onAddToArr: () => void;
   onHideUser: () => void | Promise<void>;
-  onHideGlobal: () => void;
+  onHideGlobal: () => void | Promise<void>;
 }
 
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
@@ -123,32 +117,67 @@ function HideForMeButton({
         <span className="truncate font-semibold">Hide for Me</span>
       </button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="border-gray-300/70 bg-white/40 text-gray-900 shadow-none backdrop-blur-md sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-gray-900">Hide {title}?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-gray-700">
-            This will add the title to your personal blocklist. Hidden titles no longer appear in
-            browse and recommendations. You can remove them from Settings → Hide List.
-          </p>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" disabled={loading} onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="button" variant="glass" disabled={loading} onClick={() => void handleConfirm()}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Hiding...
-                </>
-              ) : (
-                "Hide for Me"
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Hide ${title}?`}
+        description="This will add the title to your personal blocklist. Hidden titles no longer appear in browse and recommendations. You can remove them from Settings → Hide List."
+        confirmLabel="Hide for Me"
+        loading={loading}
+        loadingLabel="Hiding..."
+        onConfirm={() => void handleConfirm()}
+      />
+    </>
+  );
+}
+
+function HideGloballyButton({
+  title,
+  onConfirm,
+}: {
+  title: string;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleConfirm() {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await onConfirm();
+      setOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={cn(defaultBtn, "mt-2 w-full")}
+        disabled={loading}
+        onClick={() => setOpen(true)}
+      >
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <EyeOff className="h-4 w-4" />
+        )}
+        Hide Globally
+      </button>
+
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Hide ${title} globally?`}
+        description="This hides the title for everyone on this Huntarr instance. You can remove it later from Settings → Hide List."
+        confirmLabel="Hide Globally"
+        loading={loading}
+        loadingLabel="Hiding..."
+        onConfirm={() => void handleConfirm()}
+      />
     </>
   );
 }
@@ -346,14 +375,7 @@ export function MediaInfoBox({
           onHideUser={onHideUser}
         />
         {!isHidden && isAdmin && (
-          <button
-            type="button"
-            className={cn(defaultBtn, "mt-2 w-full")}
-            onClick={onHideGlobal}
-          >
-            <EyeOff className="h-4 w-4" />
-            Hide Globally
-          </button>
+          <HideGloballyButton title={title} onConfirm={onHideGlobal} />
         )}
       </div>
 

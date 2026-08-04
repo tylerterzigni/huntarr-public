@@ -3,6 +3,7 @@
 import { SessionProvider } from "next-auth/react";
 import { ChatProvider } from "@/components/providers/ChatProvider";
 import { DailySyncTrigger } from "@/components/providers/DailySyncTrigger";
+import { DetailNavContrastProvider } from "@/components/providers/DetailNavContrastProvider";
 import { LibraryWatchedVisibilityProvider } from "@/components/providers/LibraryWatchedVisibilityProvider";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -10,7 +11,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <LibraryWatchedVisibilityProvider>
         <DailySyncTrigger />
-        <ChatProvider>{children}</ChatProvider>
+        <DetailNavContrastProvider>
+          <ChatProvider>{children}</ChatProvider>
+        </DetailNavContrastProvider>
       </LibraryWatchedVisibilityProvider>
     </SessionProvider>
   );
