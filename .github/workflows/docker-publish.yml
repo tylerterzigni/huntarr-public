@@ -83,3 +83,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
+
+  # Self-hosted runner on the homelab host (label: huntarr-host).
+  # Host paths live in the runner's local .env (HUNTARR_DEPLOY_SCRIPT, COMPOSE_DIR, …)
+  # — never bake LAN IPs or private bind mounts into this public workflow.
+  deploy-homelab:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: [self-hosted, linux, x64, huntarr-host]
+    timeout-minutes: 20
+    steps:
+      - name: Deploy published image (app only)
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
+          HUNTARR_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:production
+          # Postgres dump before recreate — safest default for unattended deploys.
+          BACKUP: "true"
+        run: |
+          set -euo pipefail
+          script="${HUNTARR_DEPLOY_SCRIPT:-}"
+          if [ -z "$script" ] || [ ! -x "$script" ]; then
+            echo "HUNTARR_DEPLOY_SCRIPT must be set on the self-hosted runner (.env) and point to an executable deploy script."
+            exit 1
+          fi
+          exec "$script"
