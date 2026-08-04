@@ -26,6 +26,8 @@ export interface TmdbMediaItem {
   origin_country?: string[];
   popularity?: number;
   vote_count?: number;
+  /** Runtime in minutes (movie length or average TV episode length). */
+  runtime?: number;
 }
 
 export interface TmdbPersonSearchResult {

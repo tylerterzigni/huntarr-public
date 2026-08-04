@@ -8,6 +8,7 @@ import {
 import { getMediaTitle, inferMediaType } from "@/lib/integrations/tmdb/helpers";
 import { pickBestMediaMatch, titleMatchScore } from "@/lib/search/rank-search-results";
 import { textsLikelyMatch } from "@/lib/search/fuzzy-text-match";
+import { generateTypoQueryVariants } from "@/lib/search/typo-variants";
 import type { MediaType, TmdbMediaItem } from "@/types";
 
 const MIN_TITLE_MATCH_SCORE = 750;
@@ -45,6 +46,10 @@ function titleQueryVariants(query: string): string[] {
     );
   }
 
+  for (const typo of generateTypoQueryVariants(trimmed, 12)) {
+    variants.add(typo);
+  }
+
   return [...variants].filter((value) => value.length > 1);
 }
 
@@ -64,13 +69,14 @@ function pickConfidentMatch(
     (item) => inferMediaType(item) === "movie" || inferMediaType(item) === "tv"
   );
 
-  const filtered =
-    preferredType === "movie" || preferredType === "tv"
-      ? mediaItems.filter((item) => inferMediaType(item) === preferredType)
-      : mediaItems;
+  if (preferredType === "movie" || preferredType === "tv") {
+    const typed = mediaItems.filter((item) => inferMediaType(item) === preferredType);
+    const typedMatch = pickBestMediaMatch(query, typed);
+    if (typedMatch && isConfidentMatch(query, typedMatch)) return typedMatch;
+    return null;
+  }
 
-  const pool = filtered.length > 0 ? filtered : mediaItems;
-  const match = pickBestMediaMatch(query, pool);
+  const match = pickBestMediaMatch(query, mediaItems);
   if (!match || !isConfidentMatch(query, match)) return null;
   return match;
 }
@@ -90,8 +96,9 @@ async function searchTmdbCandidates(
     }
   };
 
+  // Always score against the original typed query; variants only expand recall.
   for (const variant of titleQueryVariants(query)) {
-    addItems(await searchMultiMultiPage(variant, 2));
+    addItems(await searchMultiMultiPage(variant, 1));
 
     if (preferredType !== "movie") {
       const tv = await searchTv(variant);
@@ -101,6 +108,8 @@ async function searchTmdbCandidates(
       const movie = await searchMovie(variant);
       addItems(movie.results.map((item) => ({ ...item, media_type: "movie" as const })));
     }
+
+    if (pickConfidentMatch(query, results, preferredType)) break;
   }
 
   return results;
@@ -110,6 +119,30 @@ async function resolveViaTmdb(
   query: string,
   preferredType?: MediaType | "all"
 ): Promise<ResolvedMediaTitle | null> {
+  if (preferredType === "tv" || preferredType === "movie") {
+    for (const variant of titleQueryVariants(query)) {
+      const typedCandidates =
+        preferredType === "tv"
+          ? (await searchTv(variant)).results.map((item) => ({
+              ...item,
+              media_type: "tv" as const,
+            }))
+          : (await searchMovie(variant)).results.map((item) => ({
+              ...item,
+              media_type: "movie" as const,
+            }));
+      const typedMatch = pickConfidentMatch(query, typedCandidates, preferredType);
+      if (typedMatch) {
+        return {
+          tmdbId: typedMatch.id,
+          mediaType: inferMediaType(typedMatch),
+          title: getMediaTitle(typedMatch),
+          source: "tmdb",
+        };
+      }
+    }
+  }
+
   const candidates = await searchTmdbCandidates(query, preferredType);
   const match = pickConfidentMatch(query, candidates, preferredType);
   if (!match) return null;
@@ -126,7 +159,8 @@ async function resolveViaImdb(
   query: string,
   preferredType?: MediaType | "all"
 ): Promise<ResolvedMediaTitle | null> {
-  const omdbType = preferredType === "movie" ? "movie" : preferredType === "tv" ? "series" : undefined;
+  const omdbType =
+    preferredType === "movie" ? "movie" : preferredType === "tv" ? "series" : undefined;
 
   for (const variant of titleQueryVariants(query)) {
     const omdb = await findOmdbByTitle(variant, omdbType);

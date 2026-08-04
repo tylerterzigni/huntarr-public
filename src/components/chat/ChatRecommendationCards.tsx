@@ -6,9 +6,13 @@ import type { RecommendationItem } from "@/types";
 
 interface ChatRecommendationCardsProps {
   items: RecommendationItem[];
+  onSelect?: () => void;
 }
 
-export function ChatRecommendationCards({ items }: ChatRecommendationCardsProps) {
+export function ChatRecommendationCards({
+  items,
+  onSelect,
+}: ChatRecommendationCardsProps) {
   if (items.length === 0) return null;
 
   return (
@@ -23,6 +27,7 @@ export function ChatRecommendationCards({ items }: ChatRecommendationCardsProps)
           <Link
             key={`${mediaType}-${item.id}`}
             href={href}
+            onClick={onSelect}
             className="flex gap-3 rounded-lg border border-gray-300/70 bg-white/40 p-2 shadow-none backdrop-blur-md transition-colors hover:bg-white/55"
           >
             <div className="relative h-[90px] w-[60px] flex-shrink-0 overflow-hidden rounded-md bg-gray-200">

@@ -462,6 +462,42 @@ export function SettingsClient() {
     load();
   }
 
+  async function toggleAIEnabled(p: SettingsData["aiProviders"][number]) {
+    const nextEnabled = !p.enabled;
+    setTesting(`ai-toggle-${p.id}`);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          section: "ai",
+          data: {
+            id: p.id,
+            provider: p.provider,
+            name: p.name,
+            model: p.model,
+            priority: p.priority,
+            enabled: nextEnabled,
+            baseUrl: p.baseUrl || undefined,
+          },
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setMessage(
+          typeof body.error === "string" ? body.error : "Failed to update AI provider"
+        );
+        return;
+      }
+      setMessage(
+        nextEnabled ? `${p.name} enabled` : `${p.name} disabled`
+      );
+      await load();
+    } finally {
+      setTesting(null);
+    }
+  }
+
   async function removeHideItem(id: string) {
     await fetch(`/api/hide-list?id=${id}`, { method: "DELETE" });
     load();
@@ -898,6 +934,20 @@ export function SettingsClient() {
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         "Test"
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void toggleAIEnabled(p)}
+                      disabled={testing === `ai-toggle-${p.id}`}
+                    >
+                      {testing === `ai-toggle-${p.id}` ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : p.enabled ? (
+                        "Disable"
+                      ) : (
+                        "Enable"
                       )}
                     </Button>
                     <Button

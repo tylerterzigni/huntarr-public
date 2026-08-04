@@ -106,6 +106,18 @@ export async function getMediaItemBrief(
 ): Promise<TmdbMediaItem | null> {
   try {
     const data = await tmdbFetch<Record<string, unknown>>(`/${mediaType}/${id}`);
+    let runtime: number | undefined;
+    if (mediaType === "movie" && typeof data.runtime === "number" && data.runtime > 0) {
+      runtime = data.runtime;
+    } else if (mediaType === "tv" && Array.isArray(data.episode_run_time)) {
+      const nums = data.episode_run_time.filter(
+        (n): n is number => typeof n === "number" && n > 0
+      );
+      if (nums.length > 0) {
+        runtime = Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
+      }
+    }
+
     return {
       id,
       media_type: mediaType,
@@ -123,6 +135,7 @@ export async function getMediaItemBrief(
       ),
       release_date: mediaType === "movie" ? (data.release_date as string) : undefined,
       first_air_date: mediaType === "tv" ? (data.first_air_date as string) : undefined,
+      runtime,
     };
   } catch {
     return null;

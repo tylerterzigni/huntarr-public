@@ -56,12 +56,20 @@ function maxFullStringEditDistance(length: number, mode: TextMatchMode): number 
   return Math.max(2, Math.floor(length * 0.25));
 }
 
-export function tokensLikelyMatch(queryToken: string, candidateToken: string): boolean {
+function tokensLikelyMatch(
+  queryToken: string,
+  candidateToken: string,
+  options: TextMatchOptions = {}
+): boolean {
+  const mode = options.mode ?? "title";
   const q = queryToken.toLowerCase();
   const c = candidateToken.toLowerCase();
   if (q === c) return true;
+  // Query is a prefix/abbreviation of the name ("chris" → "christopher").
   if (q.length >= 3 && c.startsWith(q)) return true;
-  if (c.length >= 3 && q.startsWith(c)) return true;
+  // For titles, also allow the candidate as a prefix of the query.
+  // For people, do NOT — "christmas" must not match "chris".
+  if (mode !== "person" && c.length >= 3 && q.startsWith(c)) return true;
   return levenshteinDistance(q, c) <= maxTokenEditDistance(Math.max(q.length, c.length));
 }
 
@@ -75,7 +83,14 @@ export function textsLikelyMatch(
   const name = normalizeMatchText(candidate);
   if (!q || !name) return false;
   if (name === q) return true;
-  if (name.includes(q) || q.includes(name)) return true;
+  if (mode === "person") {
+    // Avoid "christmas" ⊆/⊇ "chris" style false positives on full-string includes.
+    if (name.startsWith(q + " ") || name.endsWith(" " + q) || name.includes(" " + q + " ")) {
+      return true;
+    }
+  } else if (name.includes(q) || q.includes(name)) {
+    return true;
+  }
 
   const maxLen = Math.max(q.length, name.length);
   if (
@@ -91,12 +106,13 @@ export function textsLikelyMatch(
 
   if (mode === "person" && qParts.length === 1) {
     const significantParts = nameParts.filter((part) => part.length >= 3);
-    return significantParts.some((part) => tokensLikelyMatch(qParts[0], part));
+    return significantParts.some((part) => tokensLikelyMatch(qParts[0], part, options));
   }
 
   return qParts.every((qPart) =>
     nameParts.some(
-      (namePart) => tokensLikelyMatch(qPart, namePart) || namePart.startsWith(qPart)
+      (namePart) =>
+        tokensLikelyMatch(qPart, namePart, options) || namePart.startsWith(qPart)
     )
   );
 }
@@ -113,9 +129,9 @@ export function scoreTextMatch(
 
   if (name === q) return 10_000;
   if (name.startsWith(q)) return 5_000;
-  if (q.startsWith(name)) return 4_000;
+  if (mode !== "person" && q.startsWith(name)) return 4_000;
   if (name.includes(q)) return 1_000;
-  if (q.includes(name)) return 800;
+  if (mode !== "person" && q.includes(name)) return 800;
 
   const maxLen = Math.max(q.length, name.length);
   if (maxLen >= 4) {

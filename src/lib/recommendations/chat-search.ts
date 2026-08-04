@@ -21,6 +21,11 @@ import {
   sortPersonSearchResults,
   type PersonCreditEntry,
 } from "@/lib/recommendations/person-credits";
+import {
+  filterItemsByDateCriteria,
+  hasDateCriteria,
+  itemMatchesDateCriteria,
+} from "@/lib/search/date-criteria";
 import { sortSearchResults } from "@/lib/search/rank-search-results";
 import {
   CHAT_DISCOVER_PAGES,
@@ -34,7 +39,7 @@ import { enrichWithStatus, scoreItem } from "./filters";
 import type { MediaType, RecommendationItem, SearchCriteria, TmdbMediaItem } from "@/types";
 
 function getItemDate(item: TmdbMediaItem): string | null {
-  return item.first_air_date ?? item.release_date ?? null;
+  return item.release_date ?? item.first_air_date ?? null;
 }
 
 function filterByDate(
@@ -42,14 +47,7 @@ function filterByDate(
   criteria: SearchCriteria,
   options: { keepUndated?: boolean } = {}
 ): TmdbMediaItem[] {
-  if (!criteria.dateMin && !criteria.dateMax) return items;
-  return items.filter((item) => {
-    const date = getItemDate(item);
-    if (!date) return options.keepUndated ?? false;
-    if (criteria.dateMin && date < criteria.dateMin) return false;
-    if (criteria.dateMax && date > criteria.dateMax) return false;
-    return true;
-  });
+  return filterItemsByDateCriteria(items, criteria, options);
 }
 
 function filterByRating(items: TmdbMediaItem[], criteria: SearchCriteria): TmdbMediaItem[] {
@@ -114,7 +112,7 @@ function buildDiscoverSort(
       "vote_count.gte": String(FOR_YOU_QUALITY_MIN_VOTE_COUNT),
     };
   }
-  if (criteria.dateMin || criteria.dateMax) {
+  if (criteria.dateMin || criteria.dateMax || criteria.yearMin || criteria.yearMax) {
     return {
       sort_by: mediaType === "tv" ? "first_air_date.desc" : "primary_release_date.desc",
     };
@@ -277,8 +275,7 @@ function isDeterministicChatSearch(criteria: SearchCriteria): boolean {
     criteria.withKeywords ||
     (criteria.keywords?.length ?? 0) > 0 ||
     (criteria.genres?.length ?? 0) > 0 ||
-    criteria.dateMin ||
-    criteria.dateMax ||
+    hasDateCriteria(criteria) ||
     criteria.mediaType
   );
 }
@@ -410,28 +407,33 @@ async function browseWithCriteria(
 }> {
   const seen = new Set<string>();
   let items: TmdbMediaItem[] = [];
-  const hasDateFilter = !!(criteria.dateMin || criteria.dateMax);
+
+  if (criteria.withPersonUnresolved) {
+    return { items: [], creditLookup: new Map(), moreLikeSources: new Map() };
+  }
+
+  // “Like X” (optionally “by Y”) uses more-like lookup; person-only searches stay below.
+  if (criteria.moreLike && !isKeywordThemedSearch(criteria)) {
+    const moreLikeBrowse = await browseMoreLikeWithCriteria(criteria);
+    const dated = filterByDate(moreLikeBrowse.items, criteria);
+    const keep = new Set(dated.map((item) => item.id));
+    for (const id of [...moreLikeBrowse.moreLikeSources.keys()]) {
+      if (!keep.has(id)) moreLikeBrowse.moreLikeSources.delete(id);
+    }
+    return {
+      items: dated,
+      creditLookup: new Map(),
+      moreLikeSources: moreLikeBrowse.moreLikeSources,
+    };
+  }
 
   if (criteria.withPerson) {
     const personBrowse = await browsePersonWithCriteria(criteria);
     return { ...personBrowse, moreLikeSources: new Map() };
   }
 
-  if (criteria.withPersonUnresolved) {
-    return { items: [], creditLookup: new Map(), moreLikeSources: new Map() };
-  }
-
   if (criteria.moreLikeUnresolved) {
     return { items: [], creditLookup: new Map(), moreLikeSources: new Map() };
-  }
-
-  if (criteria.moreLike && !isKeywordThemedSearch(criteria)) {
-    const moreLikeBrowse = await browseMoreLikeWithCriteria(criteria);
-    return {
-      items: moreLikeBrowse.items,
-      creditLookup: new Map(),
-      moreLikeSources: moreLikeBrowse.moreLikeSources,
-    };
   }
 
   const keywordThemed = isKeywordThemedSearch(criteria);
@@ -486,7 +488,7 @@ function buildRelaxSteps(criteria: SearchCriteria): SearchCriteria[] {
     excludeInLibrary: relaxedSearch ? false : (criteria.excludeInLibrary ?? true),
   };
 
-  const hasDateRange = !!(base.dateMin || base.dateMax);
+  const hasDateRange = hasDateCriteria(base);
   const steps: SearchCriteria[] = [base];
 
   if (base.withKeywords && !base.withPerson) {
@@ -610,7 +612,7 @@ export async function getChatRecommendations(
   };
 
   const relaxSteps = buildRelaxSteps(searchCriteria);
-  const hasDateRange = !!(searchCriteria.dateMin || searchCriteria.dateMax);
+  const hasDateRange = hasDateCriteria(searchCriteria);
 
   let rawItems: TmdbMediaItem[] = [];
   let creditLookup = new Map<string, PersonCreditEntry>();
@@ -642,6 +644,7 @@ export async function getChatRecommendations(
         const itemType = inferMediaType(item);
         if (itemType !== searchCriteria.mediaType) return false;
       }
+      if (!itemMatchesDateCriteria(item, searchCriteria)) return false;
       return true;
     })
   );

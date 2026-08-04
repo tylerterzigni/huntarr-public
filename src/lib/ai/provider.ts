@@ -296,12 +296,13 @@ Criteria fields:
 - withPersonName (string): real person names only, e.g. "Tim Allen", "Taylor Sheridan"
 - withPersonCreditType ("cast" | "crew" | "both"): use "cast" for starring/featuring/with/comedies with X/movies with X; "crew" for by/from/created by/written by; default "both" only when unclear
 - mediaType ("movie" | "tv" | "all"): use "all" for genre+person without explicit type (e.g. "comedies with Tim Allen"); "tv" for sitcoms/series; "movie" for films
-- dateMin, dateMax (ISO dates YYYY-MM-DD): for recent/new content or time windows — past/last/previous/recent N days|weeks|months|years; "past week", "last month", "this year", "recently", "latest", "just released", "brand new", etc. For TV, filters first_air_date. Always set both bounds for relative windows.
-- minRating, runtimeMin, runtimeMax, language (ISO 639-1): use minRating 7+ for high ratings/highly rated/well reviewed/critically acclaimed/top rated
+- dateMin, dateMax (ISO dates YYYY-MM-DD): for recent/new content or time windows — past/last/previous/recent N days|weeks|months|years; "past week", "last month", "this year", "recently", "latest", "just released", "brand new", etc. For a specific year ("from 2024", "2024 movies") set dateMin to YYYY-01-01 and dateMax to YYYY-12-31. For ranges ("2010-2020", "between 2000 and 2010", "1990s") set both bounds to the full window. For TV, filters first_air_date. Always set both bounds.
+- yearMin, yearMax (number): optional shorthand for the same window; prefer dateMin/dateMax when possible
+- moreLikeTitle (string): a specific show/movie title ONLY — never include filters like runtime, year, or "that are under 2 hours". Example: "movies like the godfather that are under 2 hours" -> moreLikeTitle "The Godfather", mediaType "movie", runtimeMax 120
+- minRating, runtimeMin, runtimeMax, language (ISO 639-1): runtime values are minutes (under 2 hours -> runtimeMax 120). use minRating 7+ for high ratings/highly rated/well reviewed/critically acclaimed/top rated
 - mood (string): short description of tone, e.g. "funny and lighthearted", "romantic comedy", "gritty"
 - exclusions (string[]): titles or themes to avoid
 - excludeWatched, excludeInLibrary (bool)
-- moreLikeTitle (string): a specific show/movie title to find similar content (not generic phrases like "chick flicks")
 
 Interpret descriptive requests literally: "funny tv shows like chick flicks" -> mediaType "tv", genres ["Comedy", "Romance"], keywords ["romantic comedy"], mood "funny romantic comedy". "stand-up comedy specials" -> mediaType "movie", genres ["Stand-Up Comedy"]. "sitcoms from the past 2 months" -> mediaType "tv", genres ["Comedy"], keywords ["sitcom"]. "comedies with Tim Allen" -> mediaType "all", genres ["Comedy"], withPersonName "Tim Allen", withPersonCreditType "cast". "shows about weed" -> mediaType "tv", keywords ["marijuana", "cannabis", "weed"] — NOT a person name. "Taylor Sheridan shows" -> mediaType "tv", withPersonName "Taylor Sheridan", withPersonCreditType "crew".
 

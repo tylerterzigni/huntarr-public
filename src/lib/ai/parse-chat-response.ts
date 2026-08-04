@@ -1,5 +1,6 @@
 import { extractPersonFromMessage } from "@/lib/ai/chat-person-patterns";
 import { personNamesLikelyMatch } from "@/lib/search/person-name-match";
+import { isPlausibleSpellingCorrection } from "@/lib/search/typo-variants";
 import {
   applyGenrePhraseRules,
   extractThemeKeywordsFromMessage,
@@ -63,10 +64,26 @@ export function buildContextualChatReply(
 ): string {
   const person = extractPersonFromMessage(userMessage);
   if (person) {
+    const lower = userMessage.toLowerCase();
+    const movieScoped = shouldMatchMovieMediaType(lower);
+    const tvScoped = shouldMatchTvMediaType(lower);
+
     if (person.creditType === "crew") {
-      return `Here are shows from ${person.name}.`;
+      if (movieScoped && !tvScoped) {
+        return `Here are movies from ${person.name}.`;
+      }
+      if (tvScoped && !movieScoped) {
+        return `Here are shows from ${person.name}.`;
+      }
+      return `Here are titles from ${person.name}.`;
     }
     if (person.creditType === "cast") {
+      if (movieScoped && !tvScoped) {
+        return `Here are movies featuring ${person.name}.`;
+      }
+      if (tvScoped && !movieScoped) {
+        return `Here are shows featuring ${person.name}.`;
+      }
       return `Here are titles featuring ${person.name}.`;
     }
     return `Here are titles connected to ${person.name}.`;
@@ -111,14 +128,80 @@ export function extractMoreLikeTitle(message: string): string | null {
     const match = message.match(pattern);
     if (!match) continue;
 
-    const candidate = match[1].trim().replace(/[?.!,]+$/, "").trim();
+    const candidate = cleanMoreLikeTitleCandidate(
+      match[1].trim().replace(/[?.!,]+$/, "").trim()
+    );
     const genericPhrases =
       /^(chick flick(s)?|rom-?com(s)?|sitcom(s)?|horror(s)?|comed(y|ies)|drama(s)?|action(s)?|sci-?fi(s)?|thriller(s)?|show(s)?|movie(s)?|series|the|this|that|these|those|it|them)$/i;
-    if (candidate.length <= 2 || genericPhrases.test(candidate)) continue;
+    if (!candidate || candidate.length <= 2 || genericPhrases.test(candidate)) continue;
     return candidate;
   }
 
   return null;
+}
+
+/** Strip trailing filters so "the godfather that are under 2 hours" → "the godfather". */
+export function cleanMoreLikeTitleCandidate(raw: string): string {
+  let title = raw.trim().replace(/^["']|["']$/g, "").trim();
+  if (!title) return "";
+
+  title = title.replace(
+    /\s+(?:that|which)\s+(?:are|is|have|has|were|was)\b.*$/i,
+    ""
+  );
+  title = title.replace(
+    /\s+(?:that|which)\s+(?:under|over|less|more|shorter|longer|below|above|from|with|in|on)\b.*$/i,
+    ""
+  );
+  title = title.replace(
+    /\s+(?:under|over|less than|more than|shorter than|longer than|below|above|at most|at least|no more than|no less than)\s+\d+.*$/i,
+    ""
+  );
+  title = title.replace(
+    /\s+(?:from|in|during|since|before|after)\s+(?:the\s+)?(?:\d{4}|19\d{2}|20\d{2}|last|past|this|recent).*$/i,
+    ""
+  );
+  title = title.replace(/\s+with\s+(?:a\s+)?(?:runtime|length|duration)\b.*$/i, "");
+  title = title.replace(/[?.!,]+$/g, "").trim();
+  return title;
+}
+
+export function extractRuntimeConstraints(message: string): {
+  runtimeMin?: number;
+  runtimeMax?: number;
+} {
+  const lower = message.toLowerCase();
+  const result: { runtimeMin?: number; runtimeMax?: number } = {};
+
+  const toMinutes = (amount: number, unit: string): number => {
+    if (/hour/.test(unit)) return Math.round(amount * 60);
+    return Math.round(amount);
+  };
+
+  const maxMatch = lower.match(
+    /\b(?:under|less than|shorter than|below|at most|no more than|max(?:imum)?(?:\s+of)?)\s+(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?)\b/
+  );
+  if (maxMatch) {
+    result.runtimeMax = toMinutes(parseFloat(maxMatch[1]), maxMatch[2]);
+  }
+
+  const minMatch = lower.match(
+    /\b(?:over|more than|longer than|above|at least|no less than|min(?:imum)?(?:\s+of)?)\s+(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?)\b/
+  );
+  if (minMatch) {
+    result.runtimeMin = toMinutes(parseFloat(minMatch[1]), minMatch[2]);
+  }
+
+  const betweenMatch = lower.match(
+    /\b(?:between|from)\s+(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|minutes?|mins?)?\s*(?:and|to|-)\s*(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?)\b/
+  );
+  if (betweenMatch) {
+    const unit = betweenMatch[3];
+    result.runtimeMin = toMinutes(parseFloat(betweenMatch[1]), unit);
+    result.runtimeMax = toMinutes(parseFloat(betweenMatch[2]), unit);
+  }
+
+  return result;
 }
 
 function sanitizeChatReply(
@@ -213,6 +296,7 @@ function sanitizeCriteriaConflicts(criteria: Record<string, unknown>): Record<st
   }
 
   if (typeof criteria.moreLikeTitle === "string" && criteria.moreLikeTitle.trim()) {
+    criteria.moreLikeTitle = cleanMoreLikeTitleCandidate(criteria.moreLikeTitle);
     delete criteria.genres;
     delete criteria.keywords;
     delete criteria.withKeywords;
@@ -240,12 +324,43 @@ export function resolveChatCriteriaFromMessage(
   if (hasAiCriteria) {
     applyThemeCorrections(message, result, fallback);
     applyPersonCorrections(message, result, fallback);
+    applyDateCorrections(message, result, fallback);
 
     for (const field of CORE_SEARCH_FIELDS) {
       if (result[field] === undefined && fallback[field] !== undefined) {
         result[field] = fallback[field];
       }
     }
+  }
+
+  // Keep “like X” from the message, but prefer a cleaner AI title when it matches
+  // (including slight spelling corrections: "godfater" → "The Godfather").
+  const likeTitle = extractMoreLikeTitle(message);
+  if (likeTitle) {
+    const aiTitle =
+      typeof result.moreLikeTitle === "string" ? result.moreLikeTitle.trim() : "";
+    const cleanedAi = aiTitle ? cleanMoreLikeTitleCandidate(aiTitle) : "";
+    if (
+      cleanedAi &&
+      (cleanedAi.toLowerCase() === likeTitle.toLowerCase() ||
+        likeTitle.toLowerCase().includes(cleanedAi.toLowerCase()) ||
+        cleanedAi.toLowerCase().includes(likeTitle.toLowerCase()) ||
+        isPlausibleSpellingCorrection(likeTitle, cleanedAi))
+    ) {
+      result.moreLikeTitle = cleanedAi;
+    } else {
+      result.moreLikeTitle = likeTitle;
+    }
+  } else if (typeof result.moreLikeTitle === "string" && result.moreLikeTitle.trim()) {
+    result.moreLikeTitle = cleanMoreLikeTitleCandidate(result.moreLikeTitle);
+  }
+
+  const runtimeFromMessage = extractRuntimeConstraints(message);
+  if (result.runtimeMax === undefined && runtimeFromMessage.runtimeMax != null) {
+    result.runtimeMax = runtimeFromMessage.runtimeMax;
+  }
+  if (result.runtimeMin === undefined && runtimeFromMessage.runtimeMin != null) {
+    result.runtimeMin = runtimeFromMessage.runtimeMin;
   }
 
   const supplementFields = [
@@ -290,21 +405,106 @@ function applyThemeCorrections(
   }
 }
 
+/** Prefer deterministic year/date windows from the user message over AI guesses. */
+function applyDateCorrections(
+  message: string,
+  result: Record<string, unknown>,
+  fallback: Record<string, unknown>
+): void {
+  const messageDateMin =
+    typeof fallback.dateMin === "string" ? fallback.dateMin : undefined;
+  const messageDateMax =
+    typeof fallback.dateMax === "string" ? fallback.dateMax : undefined;
+
+  if (messageDateMin || messageDateMax) {
+    if (messageDateMin) result.dateMin = messageDateMin;
+    else delete result.dateMin;
+    if (messageDateMax) result.dateMax = messageDateMax;
+    else delete result.dateMax;
+
+    if (messageDateMin) {
+      const y = Number.parseInt(messageDateMin.slice(0, 4), 10);
+      if (Number.isFinite(y)) result.yearMin = y;
+    } else {
+      delete result.yearMin;
+    }
+    if (messageDateMax) {
+      const y = Number.parseInt(messageDateMax.slice(0, 4), 10);
+      if (Number.isFinite(y)) result.yearMax = y;
+    } else {
+      delete result.yearMax;
+    }
+    return;
+  }
+
+  // Normalize AI year-only fields into dates when the message had no explicit window.
+  const yearMin =
+    typeof result.yearMin === "number"
+      ? result.yearMin
+      : typeof result.yearMin === "string"
+        ? Number.parseInt(result.yearMin, 10)
+        : undefined;
+  const yearMax =
+    typeof result.yearMax === "number"
+      ? result.yearMax
+      : typeof result.yearMax === "string"
+        ? Number.parseInt(result.yearMax, 10)
+        : undefined;
+
+  if (Number.isFinite(yearMin) && !result.dateMin) {
+    result.dateMin = `${yearMin}-01-01`;
+    result.yearMin = yearMin;
+  }
+  if (Number.isFinite(yearMax) && !result.dateMax) {
+    result.dateMax = `${yearMax}-12-31`;
+    result.yearMax = yearMax;
+  }
+}
+
 function applyPersonCorrections(
   message: string,
   result: Record<string, unknown>,
   fallback: Record<string, unknown>
 ): void {
-  if (isThemeTopicQuery(message)) return;
+  if (isThemeTopicQuery(message)) {
+    delete result.withPersonName;
+    delete result.withPersonCreditType;
+    return;
+  }
 
   const verified = extractPersonFromMessage(message);
   if (verified) {
     const aiPerson =
       typeof result.withPersonName === "string" ? result.withPersonName.trim() : "";
-    if (!aiPerson || !personNamesLikelyMatch(aiPerson, verified.name)) {
+    // Prefer AI's corrected spelling when it's clearly the same person
+    // (e.g. typed "taylor sheridn" → AI "Taylor Sheridan").
+    if (
+      aiPerson &&
+      (personNamesLikelyMatch(aiPerson, verified.name) ||
+        isPlausibleSpellingCorrection(verified.name, aiPerson))
+    ) {
+      result.withPersonName = aiPerson;
+      if (result.withPersonCreditType === undefined) {
+        result.withPersonCreditType = verified.creditType;
+      }
+    } else {
       result.withPersonName = verified.name;
       result.withPersonCreditType = verified.creditType;
     }
+    return;
+  }
+
+  // No real person in the message — drop AI-hallucinated people for theme/year queries
+  // (e.g. "christmas movies from 2026" → "Chris Brancato").
+  const lower = message.toLowerCase();
+  const looksLikeThemeYearQuery =
+    /\b(?:christmas|xmas|halloween|holiday|zombie|vampire|heist|superhero)\b/i.test(lower) ||
+    /\b(?:from|in|during|of)\s+(?:19|20)\d{2}\b/i.test(lower) ||
+    /\b(?:19|20)\d{2}\s+(?:movies?|films?|shows?|series)\b/i.test(lower);
+
+  if (looksLikeThemeYearQuery) {
+    delete result.withPersonName;
+    delete result.withPersonCreditType;
     return;
   }
 
@@ -371,6 +571,10 @@ export function fallbackCriteriaFromMessage(message: string): Record<string, unk
     criteria.moreLikeTitle = moreLikeTitle;
   }
 
+  const runtime = extractRuntimeConstraints(message);
+  if (runtime.runtimeMax != null) criteria.runtimeMax = runtime.runtimeMax;
+  if (runtime.runtimeMin != null) criteria.runtimeMin = runtime.runtimeMin;
+
   const dateRange = parseRelativeDateRange(lower);
   if (dateRange) {
     criteria.dateMin = dateRange.dateMin;
@@ -401,6 +605,8 @@ export function hasDeterministicSearchIntent(criteria: Record<string, unknown>):
     (Array.isArray(criteria.keywords) && criteria.keywords.length > 0) ||
     criteria.dateMin ||
     criteria.dateMax ||
+    criteria.yearMin != null ||
+    criteria.yearMax != null ||
     criteria.mediaType
   );
 }

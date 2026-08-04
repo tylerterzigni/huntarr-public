@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { userPreferences, chatSessions } from "@/lib/db/schema";
 import { normalizeChatCriteria } from "@/lib/recommendations/normalize-criteria";
 import { getChatRecommendations } from "@/lib/recommendations/chat-search";
+import { hasDateCriteria } from "@/lib/search/date-criteria";
 import type { RecommendationItem, SearchCriteria } from "@/types";
 
 export const maxDuration = 60;
@@ -168,58 +169,99 @@ export async function POST(request: Request) {
     items = [];
   } else if (items.length > 0 && normalizedCriteria.moreLike?.title) {
     const anchor = normalizedCriteria.moreLike.title;
+    const runtimeClause =
+      normalizedCriteria.runtimeMax != null
+        ? normalizedCriteria.runtimeMax % 60 === 0
+          ? ` under ${normalizedCriteria.runtimeMax / 60} hours`
+          : ` under ${normalizedCriteria.runtimeMax} minutes`
+        : normalizedCriteria.runtimeMin != null
+          ? normalizedCriteria.runtimeMin % 60 === 0
+            ? ` over ${normalizedCriteria.runtimeMin / 60} hours`
+            : ` over ${normalizedCriteria.runtimeMin} minutes`
+          : "";
     reply = wantsMore
       ? buildContinuationReply(normalizedCriteria)
       : normalizedCriteria.moreLike.mediaType === "movie"
-        ? `Here are movies similar to ${anchor}.`
-        : `Here are shows similar to ${anchor}.`;
-  } else if (items.length > 0 && wantsMore && normalizedCriteria.withPerson?.name) {
-    reply = buildContinuationReply(normalizedCriteria);
-  }
-
-  // Empty TMDB after OpenRouter: one Claude re-parse (skip clear person-name misses).
-  if (
-    !wantsMore &&
-    !wantsCorrection &&
-    items.length === 0 &&
-    usedProvider === "openrouter" &&
-    !normalizedCriteria.withPersonUnresolved &&
-    (await hasAIProvider(session.user.id, "anthropic"))
-  ) {
-    try {
-      const retry = await resolveChatRequestFromMessage(session.user.id, searchMessage, {
-        preferProvider: "anthropic",
-        allowAnthropicFallback: false,
-      });
-      const retryCriteria = await normalizeChatCriteria(retry.criteria, session.user.id);
-      const retryItems = await getChatRecommendations(
-        session.user.id,
-        retryCriteria,
-        8,
-        searchMessage,
-        { excludeKeys }
-      );
-      if (retryItems.length > 0) {
-        reply = retry.reply;
-        usedProvider = retry.usedProvider;
-        normalizedCriteria = retryCriteria;
-        items = retryItems;
-        for (const key of Object.keys(savedCriteria)) {
-          delete savedCriteria[key];
-        }
-        Object.assign(savedCriteria, retryCriteria);
-
-        await db
-          .update(userPreferences)
-          .set({ chatCriteria: savedCriteria, updatedAt: new Date() })
-          .where(eq(userPreferences.userId, session.user.id));
-      }
-    } catch (err) {
-      console.warn("Chat empty-TMDB Anthropic retry failed:", err);
+        ? `Here are movies similar to ${anchor}${runtimeClause}.`
+        : `Here are shows similar to ${anchor}${runtimeClause}.`;
+  } else if (items.length > 0 && normalizedCriteria.withPerson?.name) {
+    const name = normalizedCriteria.withPerson.name;
+    if (wantsMore) {
+      reply = buildContinuationReply(normalizedCriteria);
+    } else if (normalizedCriteria.mediaType === "movie") {
+      reply =
+        normalizedCriteria.withPerson.creditType === "cast"
+          ? `Here are movies featuring ${name}.`
+          : `Here are movies from ${name}.`;
+    } else if (normalizedCriteria.mediaType === "tv") {
+      reply =
+        normalizedCriteria.withPerson.creditType === "cast"
+          ? `Here are shows featuring ${name}.`
+          : `Here are shows from ${name}.`;
+    } else {
+      reply =
+        normalizedCriteria.withPerson.creditType === "cast"
+          ? `Here are titles featuring ${name}.`
+          : `Here are titles from ${name}.`;
     }
   }
 
-  const hasDateRange = !!(normalizedCriteria.dateMin || normalizedCriteria.dateMax);
+  // Empty / unresolved after first parse: re-query AI with the full message, then TMDB.
+  const needsAiRetry =
+    !wantsMore &&
+    !wantsCorrection &&
+    (items.length === 0 || Boolean(normalizedCriteria.moreLikeUnresolved)) &&
+    !normalizedCriteria.withPersonUnresolved;
+
+  if (needsAiRetry) {
+    const canAnthropic =
+      usedProvider === "openrouter" && (await hasAIProvider(session.user.id, "anthropic"));
+    if (canAnthropic || usedProvider === "local") {
+      try {
+        const retry = await resolveChatRequestFromMessage(session.user.id, searchMessage, {
+          preferProvider: canAnthropic ? "anthropic" : "openrouter",
+          allowAnthropicFallback: false,
+        });
+        const retryCriteria = await normalizeChatCriteria(retry.criteria, session.user.id);
+        if (!retryCriteria.moreLikeUnresolved) {
+          const retryItems = await getChatRecommendations(
+            session.user.id,
+            retryCriteria,
+            8,
+            searchMessage,
+            { excludeKeys }
+          );
+          if (retryItems.length > 0) {
+            reply = retry.reply;
+            usedProvider = retry.usedProvider;
+            normalizedCriteria = retryCriteria;
+            items = retryItems;
+            for (const key of Object.keys(savedCriteria)) {
+              delete savedCriteria[key];
+            }
+            Object.assign(savedCriteria, retryCriteria);
+
+            await db
+              .update(userPreferences)
+              .set({ chatCriteria: savedCriteria, updatedAt: new Date() })
+              .where(eq(userPreferences.userId, session.user.id));
+
+            if (normalizedCriteria.moreLike?.title) {
+              const anchor = normalizedCriteria.moreLike.title;
+              reply =
+                normalizedCriteria.moreLike.mediaType === "movie"
+                  ? `Here are movies similar to ${anchor}.`
+                  : `Here are shows similar to ${anchor}.`;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Chat empty/unresolved AI retry failed:", err);
+      }
+    }
+  }
+
+  const hasDateRange = hasDateCriteria(normalizedCriteria);
 
   const finalReply =
     items.length === 0

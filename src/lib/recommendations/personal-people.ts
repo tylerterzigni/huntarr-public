@@ -21,6 +21,7 @@ import {
 } from "@/lib/recommendations/person-credits";
 import { personNamesLikelyMatch, scorePersonNameMatch } from "@/lib/search/person-name-match";
 import { pickBestPersonMatch } from "@/lib/search/rank-person";
+import { generateTypoQueryVariants } from "@/lib/search/typo-variants";
 import type { MediaType, TmdbCreditPerson, TmdbMediaItem, TmdbPersonSearchResult } from "@/types";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -273,13 +274,27 @@ export async function resolvePersonForUser(
     return { tmdbId: best.tmdbId, name: best.name };
   }
 
-  const search = await searchPerson(personName);
-  if (search.results.length === 0) return null;
+  const seenIds = new Set<number>();
+  const pooled: TmdbPersonSearchResult[] = [];
+  for (const variant of generateTypoQueryVariants(personName, 16)) {
+    const search = await searchPerson(variant);
+    for (const person of search.results) {
+      if (seenIds.has(person.id)) continue;
+      seenIds.add(person.id);
+      pooled.push(person);
+    }
+    // Original query first in variants — stop once we have a usable fuzzy hit.
+    if (pooled.some((person) => scorePersonNameMatch(personName, person.name) >= 1_500)) {
+      break;
+    }
+  }
 
-  let best = pickBestPersonMatch(personName, search.results);
+  if (pooled.length === 0) return null;
+
+  let best = pickBestPersonMatch(personName, pooled);
   let bestScore = -1;
 
-  for (const person of search.results) {
+  for (const person of pooled) {
     const nameScore = scorePersonNameMatch(personName, person.name);
     if (nameScore < 0) continue;
 
@@ -300,7 +315,7 @@ export async function resolvePersonForUser(
     }
   }
 
-  if (!best) return null;
+  if (!best || bestScore < 0) return null;
   return { tmdbId: best.id, name: best.name };
 }
 

@@ -8,7 +8,13 @@ import {
   resolveExtraGenreId,
   STAND_UP_COMEDY_KEYWORD_ID,
 } from "@/lib/discover/genres";
+import { getMediaTitle } from "@/lib/integrations/tmdb/helpers";
+import { loadPersonCreditEntries } from "@/lib/recommendations/person-credits";
 import { resolveMediaTitle } from "@/lib/search/resolve-media-title";
+import { titleMatchScore } from "@/lib/search/rank-search-results";
+import { textsLikelyMatch } from "@/lib/search/fuzzy-text-match";
+import { canonicalizeDateCriteria } from "@/lib/search/date-criteria";
+import { cleanMoreLikeTitleCandidate } from "@/lib/ai/parse-chat-response";
 import type { MediaType, SearchCriteria } from "@/types";
 
 const STAND_UP_GENRE_ID = -STAND_UP_COMEDY_KEYWORD_ID;
@@ -61,8 +67,12 @@ export async function normalizeChatCriteria(
     "runtimeMax",
   ] as const;
   for (const field of numericFields) {
-    if (typeof raw[field] === "number") {
-      result[field] = raw[field];
+    const value = raw[field];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      result[field] = value;
+    } else if (typeof value === "string" && value.trim() !== "") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) result[field] = parsed;
     }
   }
 
@@ -73,8 +83,8 @@ export async function normalizeChatCriteria(
     }
   }
 
-  if (typeof raw.dateMin === "string") result.dateMin = raw.dateMin;
-  if (typeof raw.dateMax === "string") result.dateMax = raw.dateMax;
+  if (typeof raw.dateMin === "string" && raw.dateMin.trim()) result.dateMin = raw.dateMin.trim();
+  if (typeof raw.dateMax === "string" && raw.dateMax.trim()) result.dateMax = raw.dateMax.trim();
   if (typeof raw.language === "string") result.language = raw.language;
   if (typeof raw.mood === "string") result.mood = raw.mood;
 
@@ -155,39 +165,6 @@ export async function normalizeChatCriteria(
     if (keywordIds.length) result.withKeywords = keywordIds.join(",");
   }
 
-  if (typeof raw.moreLikeTitle === "string" && raw.moreLikeTitle.trim()) {
-    const requestedTitle = raw.moreLikeTitle.trim();
-    const preferredType =
-      result.mediaType === "movie" || result.mediaType === "tv" || result.mediaType === "all"
-        ? result.mediaType
-        : undefined;
-
-    try {
-      const resolved = await resolveMediaTitle(requestedTitle, preferredType);
-      if (resolved) {
-        result.moreLike = {
-          tmdbId: resolved.tmdbId,
-          mediaType: resolved.mediaType,
-          title: resolved.title,
-        };
-        if (!result.mediaType || result.mediaType === "all") {
-          result.mediaType = resolved.mediaType;
-        }
-      } else {
-        result.moreLikeUnresolved = requestedTitle;
-      }
-    } catch {
-      result.moreLikeUnresolved = requestedTitle;
-    }
-  } else if (
-    raw.moreLike &&
-    typeof raw.moreLike === "object" &&
-    raw.moreLike !== null &&
-    "tmdbId" in raw.moreLike
-  ) {
-    result.moreLike = raw.moreLike as SearchCriteria["moreLike"];
-  }
-
   if (Array.isArray(raw.exclusions)) {
     result.exclusions = raw.exclusions.filter((e): e is string => typeof e === "string");
   }
@@ -212,7 +189,6 @@ export async function normalizeChatCriteria(
           tmdbId: match.tmdbId,
           name: match.name,
           creditType,
-          ...(creditType === "crew" ? { crewRole: "creator" as const } : {}),
         };
         if (creditType === "cast") {
           result.withCast = [match.tmdbId];
@@ -230,5 +206,88 @@ export async function normalizeChatCriteria(
     }
   }
 
-  return result;
+  if (typeof raw.moreLikeTitle === "string" && raw.moreLikeTitle.trim()) {
+    const requestedTitle = cleanMoreLikeTitleCandidate(raw.moreLikeTitle.trim());
+    if (!requestedTitle) {
+      // fall through — no resolvable title
+    } else {
+    const preferredType =
+      result.mediaType === "movie" || result.mediaType === "tv" || result.mediaType === "all"
+        ? result.mediaType
+        : undefined;
+
+    try {
+      let resolved: Awaited<ReturnType<typeof resolveMediaTitle>> = null;
+
+      // “Like Shrinking by Bill Lawrence” — prefer a title from that person’s credits.
+      if (result.withPerson?.tmdbId) {
+        const credits = await loadPersonCreditEntries(
+          result.withPerson.tmdbId,
+          result.withPerson.creditType ?? "both"
+        );
+        const typed =
+          preferredType === "movie" || preferredType === "tv"
+            ? credits.filter((entry) => entry.mediaType === preferredType)
+            : credits;
+        const pool = typed.length > 0 ? typed : credits;
+
+        let best: (typeof pool)[number] | null = null;
+        let bestScore = -1;
+        for (const entry of pool) {
+          const title = getMediaTitle(entry.item);
+          const score = titleMatchScore(requestedTitle, title);
+          if (score < 0 && !textsLikelyMatch(requestedTitle, title, { mode: "title" })) {
+            continue;
+          }
+          const weighted = Math.max(score, 0) + (entry.item.popularity ?? 0);
+          if (weighted > bestScore) {
+            bestScore = weighted;
+            best = entry;
+          }
+        }
+
+        if (
+          best &&
+          (bestScore >= 750 ||
+            textsLikelyMatch(requestedTitle, getMediaTitle(best.item), { mode: "title" }))
+        ) {
+          resolved = {
+            tmdbId: best.id,
+            mediaType: best.mediaType,
+            title: getMediaTitle(best.item),
+            source: "tmdb",
+          };
+        }
+      }
+
+      if (!resolved) {
+        resolved = await resolveMediaTitle(requestedTitle, preferredType);
+      }
+
+      if (resolved) {
+        result.moreLike = {
+          tmdbId: resolved.tmdbId,
+          mediaType: resolved.mediaType,
+          title: resolved.title,
+        };
+        if (!result.mediaType || result.mediaType === "all") {
+          result.mediaType = resolved.mediaType;
+        }
+      } else {
+        result.moreLikeUnresolved = requestedTitle;
+      }
+    } catch {
+      result.moreLikeUnresolved = requestedTitle;
+    }
+    }
+  } else if (
+    raw.moreLike &&
+    typeof raw.moreLike === "object" &&
+    raw.moreLike !== null &&
+    "tmdbId" in raw.moreLike
+  ) {
+    result.moreLike = raw.moreLike as SearchCriteria["moreLike"];
+  }
+
+  return canonicalizeDateCriteria(result);
 }

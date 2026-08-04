@@ -14,6 +14,8 @@ import { sortSearchResults } from "@/lib/search/rank-search-results";
 import {
   SEARCH_PREVIEW_INITIAL,
 } from "@/lib/search/preview-constants";
+import { scorePersonNameMatch } from "@/lib/search/person-name-match";
+import { generateTypoQueryVariants } from "@/lib/search/typo-variants";
 import type {
   RecommendationItem,
   TmdbMediaItem,
@@ -46,6 +48,61 @@ export type SearchPreviewItem =
 
 function filterMediaResults(items: TmdbMediaItem[]): TmdbMediaItem[] {
   return items.filter((item) => item.media_type === "movie" || item.media_type === "tv");
+}
+
+/** TMDB person search with light typo expansion when the typed query misses. */
+async function searchPersonWithTypos(
+  query: string
+): Promise<{ results: TmdbPersonSearchResult[]; total_pages: number }> {
+  const seen = new Set<number>();
+  const results: TmdbPersonSearchResult[] = [];
+
+  for (const variant of generateTypoQueryVariants(query, 12)) {
+    const search = await searchPerson(variant, 1).catch(() => ({
+      results: [] as TmdbPersonSearchResult[],
+      total_pages: 0,
+    }));
+    for (const person of search.results) {
+      if (seen.has(person.id)) continue;
+      seen.add(person.id);
+      results.push(person);
+    }
+    if (results.some((person) => scorePersonNameMatch(query, person.name) >= 1_500)) {
+      break;
+    }
+  }
+
+  return { results, total_pages: results.length > 0 ? 1 : 0 };
+}
+
+/** Multi search with typo variants when the exact query returns nothing useful. */
+async function searchMultiWithTypos(
+  query: string,
+  page: number
+): Promise<{ results: TmdbMediaItem[]; total_pages: number; page: number }> {
+  const first = await searchMulti(query, page);
+  const filtered = filterMediaResults(first.results);
+  if (filtered.length > 0 || page > 1) {
+    return { results: filtered, total_pages: first.total_pages, page };
+  }
+
+  const seen = new Set<number>();
+  const pooled: TmdbMediaItem[] = [];
+  for (const variant of generateTypoQueryVariants(query, 10)) {
+    if (variant.toLowerCase() === query.trim().toLowerCase()) continue;
+    const data = await searchMulti(variant, 1).catch(() => ({
+      results: [] as TmdbMediaItem[],
+      total_pages: 0,
+    }));
+    for (const item of filterMediaResults(data.results)) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      pooled.push(item);
+    }
+    if (pooled.length >= 8) break;
+  }
+
+  return { results: pooled, total_pages: pooled.length > 0 ? 1 : 0, page: 1 };
 }
 
 function knownForToMedia(person: TmdbPersonSearchResult): TmdbMediaItem[] {
@@ -120,21 +177,20 @@ async function fetchMultiResults(
       searchMultiMultiPage(query, pageCount),
     ]);
 
-    return {
-      results: filterMediaResults(rawResults),
-      total_pages: firstPage.total_pages,
-      page: 1,
-    };
+    const filtered = filterMediaResults(rawResults);
+    if (filtered.length > 0) {
+      return {
+        results: filtered,
+        total_pages: firstPage.total_pages,
+        page: 1,
+      };
+    }
+
+    return searchMultiWithTypos(query, 1);
   }
 
   const page = options.page ?? 1;
-  const data = await searchMulti(query, page);
-
-  return {
-    results: filterMediaResults(data.results),
-    total_pages: data.total_pages,
-    page,
-  };
+  return searchMultiWithTypos(query, page);
 }
 
 export async function runSearch(
@@ -149,7 +205,7 @@ export async function runSearch(
   page: number;
 }> {
   const [personSearch, multiSearch, historyMatches] = await Promise.all([
-    searchPerson(query, 1).catch(() => ({ results: [], total_pages: 0 })),
+    searchPersonWithTypos(query),
     fetchMultiResults(query, options),
     watchHistoryMediaMatches(userId, query).catch(() => []),
   ]);
@@ -203,11 +259,8 @@ export async function runSearchPreview(
   const need = offset + limit + 1; // +1 to detect hasMore
 
   const [personSearch, firstMulti] = await Promise.all([
-    searchPerson(query, 1).catch(() => ({
-      results: [] as TmdbPersonSearchResult[],
-      total_pages: 0,
-    })),
-    searchMulti(query, 1),
+    searchPersonWithTypos(query),
+    searchMultiWithTypos(query, 1),
   ]);
   const personPick = await pickPersonForSearch(userId, query, personSearch.results);
 

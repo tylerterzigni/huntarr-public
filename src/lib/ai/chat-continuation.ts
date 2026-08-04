@@ -90,7 +90,20 @@ export function buildContinuationReply(criteria: SearchCriteria): string {
       : `Here are more shows similar to ${anchor}.`;
   }
   if (criteria.withPerson?.name) {
-    return `Here are more titles featuring ${criteria.withPerson.name}.`;
+    const name = criteria.withPerson.name;
+    if (criteria.mediaType === "movie") {
+      return criteria.withPerson.creditType === "cast"
+        ? `Here are more movies featuring ${name}.`
+        : `Here are more movies from ${name}.`;
+    }
+    if (criteria.mediaType === "tv") {
+      return criteria.withPerson.creditType === "cast"
+        ? `Here are more shows featuring ${name}.`
+        : `Here are more shows from ${name}.`;
+    }
+    return criteria.withPerson.creditType === "cast"
+      ? `Here are more titles featuring ${name}.`
+      : `Here are more titles from ${name}.`;
   }
   return "Here are more titles that match your request.";
 }

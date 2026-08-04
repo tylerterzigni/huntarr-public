@@ -37,7 +37,13 @@ export function pickBestMediaMatch(
     query,
     items,
     (item) => getMediaTitle(item),
-    (item) => item.popularity ?? 0,
+    (item) => {
+      // Prefer well-known titles when names tie (e.g. Shrinking TV vs obscure movies).
+      const popularity = item.popularity ?? 0;
+      const votes = item.vote_count ?? 0;
+      const locale = localePriorityScore(item) * 50;
+      return popularity + Math.min(votes, 5_000) * 0.05 + locale;
+    },
     TITLE_MATCH
   );
 }

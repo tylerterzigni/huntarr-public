@@ -5,6 +5,7 @@ import {
   localePriorityScore,
   sortByLocalePreference,
 } from "@/lib/recommendations/locale-priority";
+import { itemMatchesDateCriteria } from "@/lib/search/date-criteria";
 import type { MediaType, SearchCriteria, TmdbMediaItem } from "@/types";
 
 interface PersonCreditRaw extends TmdbMediaItem {
@@ -228,6 +229,27 @@ export function isCreatorCrewCredit(entry: PersonCreditEntry): boolean {
   );
 }
 
+/** Meaningful behind-the-camera credits for “movies/shows by X”. */
+export function isSignificantCrewCredit(entry: PersonCreditEntry): boolean {
+  if (entry.creditKind !== "crew") return false;
+  if (isCreatorCrewCredit(entry)) return true;
+
+  const role = entry.role.trim().toLowerCase();
+  return (
+    role === "director" ||
+    role === "writer" ||
+    role === "screenplay" ||
+    role === "screenstory" ||
+    role === "story" ||
+    role === "teleplay" ||
+    role === "showrunner" ||
+    role === "executive producer" ||
+    role === "co-executive producer" ||
+    role === "producer" ||
+    role === "co-producer"
+  );
+}
+
 export function passesPersonCreditFilter(
   entry: PersonCreditEntry,
   filter: PersonCreditFilter
@@ -236,9 +258,13 @@ export function passesPersonCreditFilter(
     return isSignificantCastCredit(entry);
   }
   if (filter.creditType === "crew") {
-    return isCreatorCrewCredit(entry);
+    // Strict “created by” only when explicitly requested; otherwise include writers/directors/EPs.
+    if (filter.crewRole === "creator") {
+      return isCreatorCrewCredit(entry);
+    }
+    return isSignificantCrewCredit(entry);
   }
-  return isSignificantCastCredit(entry) || isCreatorCrewCredit(entry);
+  return isSignificantCastCredit(entry) || isSignificantCrewCredit(entry);
 }
 
 function personCreditFilterFromCriteria(criteria: SearchCriteria): PersonCreditFilter | null {
@@ -379,11 +405,8 @@ export function filterPersonCreditsByCriteria(
       return false;
     }
 
-    const date = getItemDate(item);
-    if (criteria.dateMin || criteria.dateMax) {
-      if (!date) return false;
-      if (criteria.dateMin && date < criteria.dateMin) return false;
-      if (criteria.dateMax && date > criteria.dateMax) return false;
+    if (!itemMatchesDateCriteria(item, criteria)) {
+      return false;
     }
 
     if (criteria.minRating && (item.vote_average ?? 0) < criteria.minRating) {

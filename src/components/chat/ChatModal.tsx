@@ -238,7 +238,10 @@ export function ChatModal({ open, onOpenChange }: ChatModalProps) {
               >
                 {msg.content}
                 {msg.role === "assistant" && msg.items && msg.items.length > 0 && (
-                  <ChatRecommendationCards items={msg.items} />
+                  <ChatRecommendationCards
+                    items={msg.items}
+                    onSelect={() => onOpenChange(false)}
+                  />
                 )}
               </div>
             ))}

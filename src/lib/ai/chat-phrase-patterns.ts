@@ -178,6 +178,11 @@ export const KEYWORD_PHRASE_RULES: Array<{ patterns: RegExp[]; keyword: string }
   { patterns: [/\bzombies?\b/i], keyword: "zombie" },
   { patterns: [/\bvampires?\b/i], keyword: "vampire" },
   { patterns: [/\b(?:weed|marijuana|cannabis|pot)\b/i], keyword: "marijuana" },
+  {
+    patterns: [/\bchristmas\b/i, /\bxmas\b/i, /\bholiday(?:s)?\s+(?:movies?|films?)\b/i],
+    keyword: "christmas",
+  },
+  { patterns: [/\bhalloween\b/i], keyword: "halloween" },
 ];
 
 /** Expand common theme terms to related TMDB keyword searches. */
@@ -447,5 +452,53 @@ export function parseRelativeDateRange(lower: string, today = new Date()): DateR
     return { dateMin: dateMin.toISOString().slice(0, 10), dateMax: isoToday };
   }
 
+  const absoluteYear = parseAbsoluteYearRange(lower);
+  if (absoluteYear) return absoluteYear;
+
   return null;
+}
+
+/** "from 2026", "in 2026", "2026 movies", "2010-2020", "1990s", "between 2000 and 2010". */
+export function parseAbsoluteYearRange(lower: string): DateRange | null {
+  const betweenMatch = lower.match(
+    /\b(?:between|from)\s+((?:19|20)\d{2})\s+(?:and|to|through|-|–|—)\s+((?:19|20)\d{2})\b/
+  );
+  if (betweenMatch) {
+    let a = parseInt(betweenMatch[1], 10);
+    let b = parseInt(betweenMatch[2], 10);
+    if (a > b) [a, b] = [b, a];
+    if (a < 1888 || b > 2100) return null;
+    return { dateMin: `${a}-01-01`, dateMax: `${b}-12-31` };
+  }
+
+  const dashRange = lower.match(/\b((?:19|20)\d{2})\s*[-–—]\s*((?:19|20)\d{2})\b/);
+  if (dashRange) {
+    let a = parseInt(dashRange[1], 10);
+    let b = parseInt(dashRange[2], 10);
+    if (a > b) [a, b] = [b, a];
+    if (a < 1888 || b > 2100) return null;
+    return { dateMin: `${a}-01-01`, dateMax: `${b}-12-31` };
+  }
+
+  const decadeMatch =
+    lower.match(/\b((?:19|20)\d)0s\b/) ??
+    lower.match(/\b((?:19|20)\d)0'?s\b/) ??
+    lower.match(/\b(?:the\s+)?((?:19|20)\d)0s\s+(?:movies?|films?|shows?|series)\b/);
+  if (decadeMatch) {
+    const decadeStart = parseInt(`${decadeMatch[1]}0`, 10);
+    if (decadeStart < 1880 || decadeStart > 2090) return null;
+    return { dateMin: `${decadeStart}-01-01`, dateMax: `${decadeStart + 9}-12-31` };
+  }
+
+  const yearMatch =
+    lower.match(
+      /\b(?:from|in|during|of|for|released(?:\s+in)?|came out(?:\s+in)?|aired(?:\s+in)?|premiered(?:\s+in)?)\s+(?:the\s+year\s+)?((?:19|20)\d{2})\b/
+    ) ??
+    lower.match(/\b((?:19|20)\d{2})\s+(?:movies?|films?|shows?|series|releases?)\b/) ??
+    lower.match(/\b(?:movies?|films?|shows?|series)\s+(?:from|in|of|released\s+in)\s+((?:19|20)\d{2})\b/);
+
+  if (!yearMatch) return null;
+  const year = parseInt(yearMatch[1], 10);
+  if (year < 1888 || year > 2100) return null;
+  return { dateMin: `${year}-01-01`, dateMax: `${year}-12-31` };
 }
