@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { backdropUrl, cn, episodeAvailabilityKey } from "@/lib/utils";
 import { glassSelect } from "@/lib/styles/glass";
+import type { SeasonAvailabilityStatus } from "@/lib/integrations/arr/availability";
 import type { MediaType } from "@/types";
 import type { TmdbSeasonSummary } from "@/components/media/SeasonsSection";
 
@@ -24,6 +25,7 @@ interface ArrAddModalProps {
   backdropPath?: string | null;
   seasons?: TmdbSeasonSummary[];
   episodeAvailability?: string[];
+  seasonAvailability?: Record<number, SeasonAvailabilityStatus>;
 }
 
 interface Instance {
@@ -45,20 +47,31 @@ type EpisodeSelection = Map<number, Set<number>>;
 function getSeasonStatus(
   seasonNumber: number,
   episodeCount: number,
-  availability: Set<string>
+  availability: Set<string>,
+  seasonAvailability?: Record<number, SeasonAvailabilityStatus>
 ): SeasonStatus {
-  if (episodeCount <= 0) return "not_requested";
-
   let availableCount = 0;
-  for (let episode = 1; episode <= episodeCount; episode++) {
-    if (availability.has(episodeAvailabilityKey(seasonNumber, episode))) {
-      availableCount++;
+  if (episodeCount > 0) {
+    for (let episode = 1; episode <= episodeCount; episode++) {
+      if (availability.has(episodeAvailabilityKey(seasonNumber, episode))) {
+        availableCount++;
+      }
     }
   }
 
-  if (availableCount === 0) return "not_requested";
-  if (availableCount >= episodeCount) return "available";
-  return "partial";
+  const fromEpisodes: SeasonStatus =
+    episodeCount <= 0 || availableCount === 0
+      ? "not_requested"
+      : availableCount >= episodeCount
+        ? "available"
+        : "partial";
+
+  const fromSonarr = seasonAvailability?.[seasonNumber];
+
+  // Prefer partial whenever either source says the season is incomplete.
+  if (fromSonarr === "partial" || fromEpisodes === "partial") return "partial";
+  if (fromSonarr === "available" || fromEpisodes === "available") return "available";
+  return "not_requested";
 }
 
 function episodeNumbersForSeason(episodeCount: number, loaded?: TmdbEpisode[]) {
@@ -70,7 +83,8 @@ function episodeNumbersForSeason(episodeCount: number, loaded?: TmdbEpisode[]) {
 
 function buildInitialSelection(
   seasons: TmdbSeasonSummary[],
-  availability: Set<string>
+  availability: Set<string>,
+  seasonAvailability?: Record<number, SeasonAvailabilityStatus>
 ): EpisodeSelection {
   const initial: EpisodeSelection = new Map();
   for (const season of seasons) {
@@ -78,7 +92,8 @@ function buildInitialSelection(
     const status = getSeasonStatus(
       season.season_number,
       season.episode_count,
-      availability
+      availability,
+      seasonAvailability
     );
     if (status === "available") continue;
 
@@ -98,15 +113,15 @@ function buildInitialSelection(
 function SeasonStatusBadge({ status }: { status: SeasonStatus }) {
   if (status === "available") {
     return (
-      <span className="inline-flex rounded-full bg-emerald-600/90 px-2.5 py-0.5 text-xs font-medium text-white">
+      <span className="inline-flex rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-medium text-white">
         Available
       </span>
     );
   }
   if (status === "partial") {
     return (
-      <span className="inline-flex rounded-full bg-lime-600/90 px-2.5 py-0.5 text-xs font-medium text-white">
-        Partial
+      <span className="inline-flex rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-medium text-white">
+        Partially Available
       </span>
     );
   }
@@ -160,6 +175,7 @@ export function ArrAddModal({
   backdropPath,
   seasons = [],
   episodeAvailability = [],
+  seasonAvailability = {},
 }: ArrAddModalProps) {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [profiles, setProfiles] = useState<Array<{ id: number; name: string }>>([]);
@@ -191,9 +207,14 @@ export function ArrAddModal({
     () =>
       regularSeasons.map((season) => ({
         ...season,
-        status: getSeasonStatus(season.season_number, season.episode_count, availability),
+        status: getSeasonStatus(
+          season.season_number,
+          season.episode_count,
+          availability,
+          seasonAvailability
+        ),
       })),
-    [regularSeasons, availability]
+    [regularSeasons, availability, seasonAvailability]
   );
 
   const selectedSeasonCount = useMemo(() => {
@@ -233,7 +254,9 @@ export function ArrAddModal({
     setExpandedSeasons(new Set());
     setLoadedEpisodes({});
     setLoadingSeason(null);
-    setSelectedEpisodes(buildInitialSelection(seasons, new Set(episodeAvailability)));
+    setSelectedEpisodes(
+      buildInitialSelection(seasons, new Set(episodeAvailability), seasonAvailability)
+    );
 
     fetch(`/api/arr/instances?type=${mediaType === "movie" ? "radarr" : "sonarr"}`)
       .then((r) => r.json())
@@ -241,7 +264,7 @@ export function ArrAddModal({
         setInstances(data.instances ?? []);
         if (data.instances?.[0]) setInstanceId(data.instances[0].id);
       });
-  }, [open, mediaType, seasons, episodeAvailability]);
+  }, [open, mediaType, seasons, episodeAvailability, seasonAvailability]);
 
   useEffect(() => {
     if (!instanceId) return;

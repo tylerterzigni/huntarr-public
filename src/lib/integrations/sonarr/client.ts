@@ -67,10 +67,23 @@ export async function addSonarrSeries(
 }
 
 export async function getSonarrSeries(instance: DecryptedInstance<ArrCredentials>) {
-  return arrFetch<Array<{ id: number; tvdbId: number; tmdbId?: number; title: string }>>(
-    instance,
-    "/series"
-  );
+  return arrFetch<
+    Array<{
+      id: number;
+      tvdbId: number;
+      tmdbId?: number;
+      title: string;
+      seasons?: Array<{
+        seasonNumber: number;
+        statistics?: {
+          episodeFileCount?: number;
+          episodeCount?: number;
+          totalEpisodeCount?: number;
+          percentOfEpisodes?: number;
+        };
+      }>;
+    }>
+  >(instance, "/series");
 }
 
 export async function getSonarrEpisodes(instance: DecryptedInstance<ArrCredentials>, seriesId: number) {

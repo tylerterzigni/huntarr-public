@@ -10,7 +10,7 @@ import { getArrLibraryIds } from "@/lib/integrations/arr/library";
 import { isHidden } from "@/lib/hide-list";
 import { isMediaLiked } from "@/lib/liked-list";
 import { getPlexPlayUrl } from "@/lib/integrations/plex/play-url";
-import { getSonarrEpisodeAvailability } from "@/lib/integrations/arr/availability";
+import { getSonarrTvAvailability } from "@/lib/integrations/arr/availability";
 import { getTmdbRegion } from "@/lib/settings/global";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -65,7 +65,10 @@ export default async function TvDetailPage({ params }: PageProps) {
   const seasons =
     (details.seasons as Array<{ season_number: number; episode_count: number; name?: string }>) ??
     [];
-  const episodeAvailability = Array.from(await getSonarrEpisodeAvailability(tmdbId));
+  const { episodeAvailability, seasonAvailability } = await getSonarrTvAvailability(
+    tmdbId,
+    seasons
+  );
   const inPlex = plexIds.has(`tv:${tmdbId}`);
   const inArr = arrIds.has(`tv:${tmdbId}`);
   const plexPlayUrl = inPlex ? await getPlexPlayUrl(tmdbId, "tv", title) : null;
@@ -96,6 +99,7 @@ export default async function TvDetailPage({ params }: PageProps) {
         keywords={keywords}
         seasons={seasons}
         episodeAvailability={episodeAvailability}
+        seasonAvailability={seasonAvailability}
       />
       <TitleDetailRelated recommendations={recommendations} similar={similar} />
     </MainLayout>

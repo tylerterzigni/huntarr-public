@@ -11,6 +11,7 @@ import { SeasonsSection, type TmdbSeasonSummary } from "@/components/media/Seaso
 import { useDetailNavContrast } from "@/components/providers/DetailNavContrastProvider";
 import { dispatchTitleHidden } from "@/lib/hide-list/client";
 import { extractVideos, getVideoWatchUrl, pickBestTrailer } from "@/lib/integrations/tmdb/trailer";
+import type { SeasonAvailabilityStatus } from "@/lib/integrations/arr/availability";
 import type { MediaType, TmdbCreditPerson } from "@/types";
 import type { RTRatings } from "@/lib/integrations/rottentomatoes/client";
 
@@ -32,6 +33,7 @@ interface TitleDetailClientProps {
   keywords?: Array<{ id: number; name: string }>;
   seasons?: TmdbSeasonSummary[];
   episodeAvailability?: string[];
+  seasonAvailability?: Record<number, SeasonAvailabilityStatus>;
 }
 export function TitleDetailClient({
   details,
@@ -50,6 +52,7 @@ export function TitleDetailClient({
   keywords = [],
   seasons = [],
   episodeAvailability = [],
+  seasonAvailability = {},
 }: TitleDetailClientProps) {
   const [arrOpen, setArrOpen] = useState(false);
   const { reportBackdropUrl, reportBackdropElement } = useDetailNavContrast();
@@ -195,6 +198,7 @@ export function TitleDetailClient({
                     tmdbId={tmdbId}
                     seasons={seasons}
                     episodeAvailability={episodeAvailability}
+                    seasonAvailability={seasonAvailability}
                   />
                 </div>
               </div>
@@ -231,6 +235,7 @@ export function TitleDetailClient({
         backdropPath={details.backdrop_path as string | null | undefined}
         seasons={seasons}
         episodeAvailability={episodeAvailability}
+        seasonAvailability={seasonAvailability}
       />
     </>
   );

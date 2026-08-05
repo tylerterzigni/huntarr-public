@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn, formatAirDate, stillUrl, episodeAvailabilityKey } from "@/lib/utils";
+import type { SeasonAvailabilityStatus } from "@/lib/integrations/arr/availability";
 
 export interface TmdbSeasonSummary {
   season_number: number;
@@ -23,27 +24,35 @@ interface SeasonsSectionProps {
   tmdbId: number;
   seasons: TmdbSeasonSummary[];
   episodeAvailability: string[];
+  /** Season-level status from Sonarr + TMDB episode counts. */
+  seasonAvailability?: Record<number, SeasonAvailabilityStatus>;
 }
 
-function AvailabilityBadge({ label, partial }: { label: string; partial?: boolean }) {
+function AvailabilityBadge({ label }: { label: string }) {
   return (
-    <span
-      className={cn(
-        "rounded px-2 py-0.5 text-xs font-medium text-white",
-        partial ? "bg-lime-600/90" : "bg-emerald-600/90"
-      )}
-    >
+    <span className="inline-flex rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-medium text-white">
       {label}
     </span>
   );
 }
 
-function getSeasonAvailability(
+function SeasonStatusBadge({ status }: { status: SeasonAvailabilityStatus | null }) {
+  if (status === "available") {
+    return <AvailabilityBadge label="Available" />;
+  }
+  if (status === "partial") {
+    return <AvailabilityBadge label="Partially Available" />;
+  }
+  return null;
+}
+
+/** Derive status from episode hasFile keys vs TMDB episode_count. */
+function getSeasonAvailabilityFromEpisodes(
   seasonNumber: number,
   episodeCount: number,
   availability: Set<string>
-) {
-  if (episodeCount === 0) return null;
+): SeasonAvailabilityStatus | null {
+  if (episodeCount <= 0) return null;
 
   let availableCount = 0;
   for (let episode = 1; episode <= episodeCount; episode++) {
@@ -53,14 +62,25 @@ function getSeasonAvailability(
   }
 
   if (availableCount === 0) return null;
-  if (availableCount === episodeCount) return "available";
+  if (availableCount >= episodeCount) return "available";
   return "partial";
+}
+
+/** Prefer Partially Available when server stats and episode keys disagree. */
+function resolveSeasonStatus(
+  fromServer: SeasonAvailabilityStatus | undefined,
+  fromEpisodes: SeasonAvailabilityStatus | null
+): SeasonAvailabilityStatus | null {
+  if (fromServer === "partial" || fromEpisodes === "partial") return "partial";
+  if (fromServer === "available" || fromEpisodes === "available") return "available";
+  return null;
 }
 
 export function SeasonsSection({
   tmdbId,
   seasons,
   episodeAvailability,
+  seasonAvailability = {},
 }: SeasonsSectionProps) {
   const availability = new Set(episodeAvailability);
   const regularSeasons = seasons
@@ -102,10 +122,13 @@ export function SeasonsSection({
       <div className="space-y-3">
         {regularSeasons.map((season) => {
           const isExpanded = expandedSeason === season.season_number;
-          const seasonStatus = getSeasonAvailability(
-            season.season_number,
-            season.episode_count,
-            availability
+          const seasonStatus = resolveSeasonStatus(
+            seasonAvailability[season.season_number],
+            getSeasonAvailabilityFromEpisodes(
+              season.season_number,
+              season.episode_count,
+              availability
+            )
           );
           const episodes = loadedSeasons[season.season_number] ?? [];
 
@@ -128,12 +151,7 @@ export function SeasonsSection({
                   </span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  {seasonStatus === "available" && (
-                    <AvailabilityBadge label="Available" />
-                  )}
-                  {seasonStatus === "partial" && (
-                    <AvailabilityBadge label="Partially Available" partial />
-                  )}
+                  <SeasonStatusBadge status={seasonStatus} />
                   {isExpanded ? (
                     <ChevronUp className="h-5 w-5 text-gray-400" />
                   ) : (
