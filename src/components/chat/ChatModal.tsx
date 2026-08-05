@@ -192,8 +192,9 @@ export function ChatModal({ open, onOpenChange }: ChatModalProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         onOpenAutoFocus={(event) => event.preventDefault()}
+        data-no-pull-refresh
         className={cn(
-          "flex flex-col gap-4 border-gray-300/70 bg-white/40 p-4 shadow-none backdrop-blur-md",
+          "flex flex-col gap-4 overflow-hidden border-gray-300/70 bg-white/40 p-4 shadow-none backdrop-blur-md",
           "fixed inset-0 left-0 top-0 h-[100dvh] max-h-[100dvh] w-full max-w-full translate-x-0 translate-y-0 rounded-none",
           "sm:inset-auto sm:left-[50%] sm:top-[50%] sm:h-[600px] sm:max-w-[560px] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-lg sm:p-6",
           "[&>button]:right-4 [&>button]:top-[calc(1rem+var(--safe-area-top))] sm:[&>button]:top-4"
@@ -204,7 +205,9 @@ export function ChatModal({ open, onOpenChange }: ChatModalProps) {
         </DialogHeader>
         <div
           ref={scrollContainerRef}
-          className="min-h-0 flex-1 overflow-y-auto pr-2 sm:pr-4"
+          data-allow-touch-scroll
+          data-no-pull-refresh
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 sm:pr-4 [-webkit-overflow-scrolling:touch]"
           style={
             isMobile
               ? {

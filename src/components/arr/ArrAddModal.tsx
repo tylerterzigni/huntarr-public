@@ -254,6 +254,7 @@ export function ArrAddModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        onOpenAutoFocus={(event) => event.preventDefault()}
         className={cn(
           "max-h-[90vh] w-full max-w-2xl overflow-hidden border-gray-600 bg-seerr-bg p-0 shadow-xl sm:rounded-lg",
           "gap-0"

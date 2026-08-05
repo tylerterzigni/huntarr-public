@@ -910,49 +910,52 @@ export function SettingsClient() {
           {data.aiProviders.map((p) => (
             <Card key={p.id}>
               <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <p className="font-medium">{p.name} ({p.provider})</p>
                     <p className="text-sm text-muted-foreground">Model: {p.model}</p>
                     <p className="text-sm text-muted-foreground">Priority: {p.priority}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openAIChange(p)}
-                    >
-                      Change
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setAiTestConfirm({ id: p.id, name: p.name })}
-                      disabled={testing === "ai" + p.id}
-                    >
-                      {testing === "ai" + p.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Test"
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void toggleAIEnabled(p)}
-                      disabled={testing === `ai-toggle-${p.id}`}
-                    >
-                      {testing === `ai-toggle-${p.id}` ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : p.enabled ? (
-                        "Disable"
-                      ) : (
-                        "Enable"
-                      )}
-                    </Button>
+                  <div className="flex shrink-0 items-start gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void toggleAIEnabled(p)}
+                        disabled={testing === `ai-toggle-${p.id}`}
+                      >
+                        {testing === `ai-toggle-${p.id}` ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : p.enabled ? (
+                          "Disable"
+                        ) : (
+                          "Enable"
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openAIChange(p)}
+                      >
+                        Change
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAiTestConfirm({ id: p.id, name: p.name })}
+                        disabled={testing === "ai" + p.id}
+                      >
+                        {testing === "ai" + p.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Test"
+                        )}
+                      </Button>
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="shrink-0"
                       onClick={() =>
                         requestDeleteConfirm({
                           title: `Delete ${p.name}?`,

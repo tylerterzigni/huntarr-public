@@ -7,6 +7,7 @@ function shouldIgnoreTarget(target: EventTarget | null) {
   return Boolean(
     target.closest("[data-allow-touch-scroll]") ||
       target.closest("[data-no-pull-refresh]") ||
+      target.closest("[role='dialog']") ||
       target.closest(".horizontal-scroll-row") ||
       target.closest("input, textarea, select, [contenteditable=true]")
   );
