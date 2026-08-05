@@ -118,4 +118,9 @@ export interface ArrAddRequest {
   monitor?: string;
   /** Season numbers to monitor when adding a series (specials = 0 omitted unless included). */
   seasons?: number[];
+  /**
+   * Optional per-season episode numbers to monitor.
+   * Seasons omitted here keep Sonarr's default (all episodes monitored for selected seasons).
+   */
+  episodes?: Array<{ seasonNumber: number; episodeNumbers: number[] }>;
 }

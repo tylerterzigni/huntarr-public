@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { backdropUrl, cn, episodeAvailabilityKey } from "@/lib/utils";
 import { glassSelect } from "@/lib/styles/glass";
 import type { MediaType } from "@/types";
@@ -32,7 +32,15 @@ interface Instance {
   type: string;
 }
 
+interface TmdbEpisode {
+  episode_number: number;
+  name: string;
+  air_date?: string;
+}
+
 type SeasonStatus = "available" | "partial" | "not_requested";
+
+type EpisodeSelection = Map<number, Set<number>>;
 
 function getSeasonStatus(
   seasonNumber: number,
@@ -51,6 +59,40 @@ function getSeasonStatus(
   if (availableCount === 0) return "not_requested";
   if (availableCount >= episodeCount) return "available";
   return "partial";
+}
+
+function episodeNumbersForSeason(episodeCount: number, loaded?: TmdbEpisode[]) {
+  if (loaded && loaded.length > 0) {
+    return loaded.map((episode) => episode.episode_number);
+  }
+  return Array.from({ length: Math.max(0, episodeCount) }, (_, i) => i + 1);
+}
+
+function buildInitialSelection(
+  seasons: TmdbSeasonSummary[],
+  availability: Set<string>
+): EpisodeSelection {
+  const initial: EpisodeSelection = new Map();
+  for (const season of seasons) {
+    if (season.season_number <= 0 || season.episode_count <= 0) continue;
+    const status = getSeasonStatus(
+      season.season_number,
+      season.episode_count,
+      availability
+    );
+    if (status === "available") continue;
+
+    const episodes = new Set<number>();
+    for (let episode = 1; episode <= season.episode_count; episode++) {
+      if (!availability.has(episodeAvailabilityKey(season.season_number, episode))) {
+        episodes.add(episode);
+      }
+    }
+    if (episodes.size > 0) {
+      initial.set(season.season_number, episodes);
+    }
+  }
+  return initial;
 }
 
 function SeasonStatusBadge({ status }: { status: SeasonStatus }) {
@@ -125,7 +167,10 @@ export function ArrAddModal({
   const [instanceId, setInstanceId] = useState("");
   const [qualityProfileId, setQualityProfileId] = useState<number>();
   const [rootFolder, setRootFolder] = useState("");
-  const [selectedSeasons, setSelectedSeasons] = useState<Set<number>>(new Set());
+  const [selectedEpisodes, setSelectedEpisodes] = useState<EpisodeSelection>(new Map());
+  const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
+  const [loadedEpisodes, setLoadedEpisodes] = useState<Record<number, TmdbEpisode[]>>({});
+  const [loadingSeason, setLoadingSeason] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -151,9 +196,33 @@ export function ArrAddModal({
     [regularSeasons, availability]
   );
 
+  const selectedSeasonCount = useMemo(() => {
+    let count = 0;
+    for (const episodes of selectedEpisodes.values()) {
+      if (episodes.size > 0) count += 1;
+    }
+    return count;
+  }, [selectedEpisodes]);
+
+  const selectedEpisodeCount = useMemo(() => {
+    let count = 0;
+    for (const episodes of selectedEpisodes.values()) {
+      count += episodes.size;
+    }
+    return count;
+  }, [selectedEpisodes]);
+
   const allSelected =
-    seasonRows.length > 0 && seasonRows.every((s) => selectedSeasons.has(s.season_number));
-  const someSelected = seasonRows.some((s) => selectedSeasons.has(s.season_number));
+    seasonRows.length > 0 &&
+    seasonRows.every((season) => {
+      const selected = selectedEpisodes.get(season.season_number);
+      if (!selected || selected.size === 0) return false;
+      const allNumbers = episodeNumbersForSeason(
+        season.episode_count,
+        loadedEpisodes[season.season_number]
+      );
+      return allNumbers.every((n) => selected.has(n));
+    });
 
   useEffect(() => {
     if (!open) return;
@@ -161,20 +230,10 @@ export function ArrAddModal({
     setSuccess(false);
     setError("");
     setLoading(false);
-
-    const initial = new Set<number>();
-    for (const season of seasons) {
-      if (season.season_number <= 0) continue;
-      const status = getSeasonStatus(
-        season.season_number,
-        season.episode_count,
-        new Set(episodeAvailability)
-      );
-      if (status !== "available") {
-        initial.add(season.season_number);
-      }
-    }
-    setSelectedSeasons(initial);
+    setExpandedSeasons(new Set());
+    setLoadedEpisodes({});
+    setLoadingSeason(null);
+    setSelectedEpisodes(buildInitialSelection(seasons, new Set(episodeAvailability)));
 
     fetch(`/api/arr/instances?type=${mediaType === "movie" ? "radarr" : "sonarr"}`)
       .then((r) => r.json())
@@ -196,32 +255,119 @@ export function ArrAddModal({
       });
   }, [instanceId]);
 
-  function toggleSeason(seasonNumber: number, next: boolean) {
-    setSelectedSeasons((prev) => {
-      const updated = new Set(prev);
-      if (next) updated.add(seasonNumber);
-      else updated.delete(seasonNumber);
+  function setSeasonEpisodes(seasonNumber: number, episodeNumbers: number[]) {
+    setSelectedEpisodes((prev) => {
+      const updated = new Map(prev);
+      if (episodeNumbers.length === 0) {
+        updated.delete(seasonNumber);
+      } else {
+        updated.set(seasonNumber, new Set(episodeNumbers));
+      }
       return updated;
     });
   }
 
+  function toggleSeason(seasonNumber: number, episodeCount: number, next: boolean) {
+    const numbers = episodeNumbersForSeason(episodeCount, loadedEpisodes[seasonNumber]);
+    setSeasonEpisodes(seasonNumber, next ? numbers : []);
+  }
+
   function toggleAll(next: boolean) {
-    if (next) {
-      setSelectedSeasons(new Set(seasonRows.map((s) => s.season_number)));
-    } else {
-      setSelectedSeasons(new Set());
+    if (!next) {
+      setSelectedEpisodes(new Map());
+      return;
+    }
+
+    const updated: EpisodeSelection = new Map();
+    for (const season of seasonRows) {
+      const numbers = episodeNumbersForSeason(
+        season.episode_count,
+        loadedEpisodes[season.season_number]
+      );
+      if (numbers.length > 0) {
+        updated.set(season.season_number, new Set(numbers));
+      }
+    }
+    setSelectedEpisodes(updated);
+  }
+
+  function toggleEpisode(seasonNumber: number, episodeNumber: number, next: boolean) {
+    setSelectedEpisodes((prev) => {
+      const updated = new Map(prev);
+      const current = new Set(updated.get(seasonNumber) ?? []);
+      if (next) current.add(episodeNumber);
+      else current.delete(episodeNumber);
+      if (current.size === 0) updated.delete(seasonNumber);
+      else updated.set(seasonNumber, current);
+      return updated;
+    });
+  }
+
+  async function toggleSeasonExpanded(seasonNumber: number) {
+    const willExpand = !expandedSeasons.has(seasonNumber);
+    setExpandedSeasons((prev) => {
+      const updated = new Set(prev);
+      if (updated.has(seasonNumber)) updated.delete(seasonNumber);
+      else updated.add(seasonNumber);
+      return updated;
+    });
+
+    if (!willExpand) return;
+    if (loadedEpisodes[seasonNumber] || loadingSeason === seasonNumber) return;
+
+    setLoadingSeason(seasonNumber);
+    try {
+      const res = await fetch(`/api/tmdb/tv/${tmdbId}/season/${seasonNumber}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const episodes = ((data.episodes as TmdbEpisode[]) ?? []).map((episode) => ({
+        episode_number: episode.episode_number,
+        name: episode.name,
+        air_date: episode.air_date,
+      }));
+      setLoadedEpisodes((prev) => ({ ...prev, [seasonNumber]: episodes }));
+
+      // If the whole season was selected via 1..count, remap onto real episode numbers
+      setSelectedEpisodes((prev) => {
+        const current = prev.get(seasonNumber);
+        if (!current || current.size === 0 || episodes.length === 0) return prev;
+        const seasonMeta = seasonRows.find((s) => s.season_number === seasonNumber);
+        const count = seasonMeta?.episode_count ?? 0;
+        const wasFullySelected =
+          count > 0 &&
+          Array.from({ length: count }, (_, i) => i + 1).every((n) => current.has(n));
+        if (!wasFullySelected) return prev;
+        const updated = new Map(prev);
+        updated.set(seasonNumber, new Set(episodes.map((e) => e.episode_number)));
+        return updated;
+      });
+    } finally {
+      setLoadingSeason((current) => (current === seasonNumber ? null : current));
     }
   }
 
   async function handleAdd() {
-    if (isTv && selectedSeasons.size === 0) {
-      setError("Select at least one season to request.");
+    if (isTv && selectedEpisodeCount === 0) {
+      setError("Select at least one episode to request.");
       return;
     }
 
     setLoading(true);
     setError("");
     try {
+      const seasonsPayload = Array.from(selectedEpisodes.entries())
+        .filter(([, episodes]) => episodes.size > 0)
+        .map(([seasonNumber]) => seasonNumber)
+        .sort((a, b) => a - b);
+
+      const episodesPayload = Array.from(selectedEpisodes.entries())
+        .filter(([, episodes]) => episodes.size > 0)
+        .map(([seasonNumber, episodes]) => ({
+          seasonNumber,
+          episodeNumbers: Array.from(episodes).sort((a, b) => a - b),
+        }))
+        .sort((a, b) => a.seasonNumber - b.seasonNumber);
+
       const res = await fetch("/api/arr/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -232,7 +378,12 @@ export function ArrAddModal({
           title,
           qualityProfileId,
           rootFolder,
-          ...(isTv ? { seasons: Array.from(selectedSeasons).sort((a, b) => a - b) } : {}),
+          ...(isTv
+            ? {
+                seasons: seasonsPayload,
+                episodes: episodesPayload,
+              }
+            : {}),
         }),
       });
       const data = await res.json();
@@ -249,7 +400,7 @@ export function ArrAddModal({
   const canSubmit =
     Boolean(instanceId) &&
     !loading &&
-    (!isTv || selectedSeasons.size > 0);
+    (!isTv || selectedEpisodeCount > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -303,28 +454,153 @@ export function ArrAddModal({
                     </div>
                     <ul className="divide-y divide-gray-300/60">
                       {seasonRows.map((season) => {
-                        const checked = selectedSeasons.has(season.season_number);
+                        const selected = selectedEpisodes.get(season.season_number);
+                        const allNumbers = episodeNumbersForSeason(
+                          season.episode_count,
+                          loadedEpisodes[season.season_number]
+                        );
+                        const checked = Boolean(selected) && selected!.size > 0;
+                        const isExpanded = expandedSeasons.has(season.season_number);
+                        const episodes = loadedEpisodes[season.season_number] ?? [];
+                        const isLoadingEpisodes = loadingSeason === season.season_number;
+
                         return (
-                          <li
-                            key={season.season_number}
-                            className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 px-4 py-3"
-                          >
-                            <Toggle
-                              checked={checked}
-                              onCheckedChange={(next) =>
-                                toggleSeason(season.season_number, next)
-                              }
-                              aria-label={`Season ${season.season_number}`}
-                            />
-                            <span className="text-sm font-medium text-gray-900">
-                              Season {season.season_number}
-                            </span>
-                            <span className="text-right text-sm text-gray-600 tabular-nums">
-                              {season.episode_count}
-                            </span>
-                            <span className="flex min-w-[7.5rem] justify-end">
-                              <SeasonStatusBadge status={season.status} />
-                            </span>
+                          <li key={season.season_number}>
+                            <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 px-4 py-3">
+                              <Toggle
+                                checked={checked}
+                                onCheckedChange={(next) =>
+                                  toggleSeason(
+                                    season.season_number,
+                                    season.episode_count,
+                                    next
+                                  )
+                                }
+                                aria-label={`Season ${season.season_number}`}
+                              />
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    toggleSeasonExpanded(season.season_number)
+                                  }
+                                  aria-expanded={isExpanded}
+                                  aria-label={
+                                    isExpanded
+                                      ? `Hide season ${season.season_number} episodes`
+                                      : `Show season ${season.season_number} episodes`
+                                  }
+                                  className="rounded p-0.5 text-gray-500 transition-colors hover:bg-gray-200/70 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-seerr-accent"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4" />
+                                  )}
+                                </button>
+                                <span className="text-sm font-medium text-gray-900">
+                                  Season {season.season_number}
+                                </span>
+                              </div>
+                              <span className="text-right text-sm text-gray-600 tabular-nums">
+                                {season.episode_count}
+                              </span>
+                              <span className="flex min-w-[7.5rem] justify-end">
+                                <SeasonStatusBadge status={season.status} />
+                              </span>
+                            </div>
+
+                            {isExpanded && (
+                              <ul className="border-t border-gray-300/50 bg-white/40">
+                                {isLoadingEpisodes && episodes.length === 0 && (
+                                  <li className="flex items-center gap-2 px-4 py-3 pl-14 text-sm text-gray-500">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading episodes…
+                                  </li>
+                                )}
+                                {!isLoadingEpisodes &&
+                                  episodes.length === 0 &&
+                                  allNumbers.map((episodeNumber) => {
+                                    const episodeChecked =
+                                      selected?.has(episodeNumber) ?? false;
+                                    const isAvailable = availability.has(
+                                      episodeAvailabilityKey(
+                                        season.season_number,
+                                        episodeNumber
+                                      )
+                                    );
+                                    return (
+                                      <li
+                                        key={episodeNumber}
+                                        className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-t border-gray-300/40 px-4 py-2.5 pl-14 first:border-t-0"
+                                      >
+                                        <Toggle
+                                          checked={episodeChecked}
+                                          onCheckedChange={(next) =>
+                                            toggleEpisode(
+                                              season.season_number,
+                                              episodeNumber,
+                                              next
+                                            )
+                                          }
+                                          aria-label={`Season ${season.season_number} episode ${episodeNumber}`}
+                                        />
+                                        <span className="text-sm text-gray-800">
+                                          Episode {episodeNumber}
+                                        </span>
+                                        {isAvailable ? (
+                                          <span className="text-xs font-medium text-emerald-700">
+                                            Available
+                                          </span>
+                                        ) : (
+                                          <span />
+                                        )}
+                                      </li>
+                                    );
+                                  })}
+                                {episodes.map((episode) => {
+                                  const episodeChecked =
+                                    selected?.has(episode.episode_number) ?? false;
+                                  const isAvailable = availability.has(
+                                    episodeAvailabilityKey(
+                                      season.season_number,
+                                      episode.episode_number
+                                    )
+                                  );
+                                  return (
+                                    <li
+                                      key={episode.episode_number}
+                                      className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-t border-gray-300/40 px-4 py-2.5 pl-14 first:border-t-0"
+                                    >
+                                      <Toggle
+                                        checked={episodeChecked}
+                                        onCheckedChange={(next) =>
+                                          toggleEpisode(
+                                            season.season_number,
+                                            episode.episode_number,
+                                            next
+                                          )
+                                        }
+                                        aria-label={`Season ${season.season_number} episode ${episode.episode_number}`}
+                                      />
+                                      <span className="min-w-0 truncate text-sm text-gray-800">
+                                        <span className="font-medium tabular-nums">
+                                          {episode.episode_number}
+                                        </span>
+                                        {episode.name ? ` – ${episode.name}` : ""}
+                                      </span>
+                                      {isAvailable ? (
+                                        <span className="shrink-0 text-xs font-medium text-emerald-700">
+                                          Available
+                                        </span>
+                                      ) : (
+                                        <span />
+                                      )}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
                           </li>
                         );
                       })}
@@ -400,8 +676,8 @@ export function ArrAddModal({
                   >
                     {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     {submitLabel}
-                    {isTv && someSelected && !allSelected
-                      ? ` (${selectedSeasons.size})`
+                    {isTv && selectedSeasonCount > 0 && !allSelected
+                      ? ` (${selectedSeasonCount})`
                       : ""}
                   </Button>
                 </div>

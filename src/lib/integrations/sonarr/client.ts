@@ -60,7 +60,7 @@ export async function addSonarrSeries(
   instance: DecryptedInstance<ArrCredentials>,
   series: Record<string, unknown>
 ) {
-  return arrFetch(instance, "/series", {
+  return arrFetch<{ id: number } & Record<string, unknown>>(instance, "/series", {
     method: "POST",
     body: JSON.stringify(series),
   });
@@ -75,6 +75,35 @@ export async function getSonarrSeries(instance: DecryptedInstance<ArrCredentials
 
 export async function getSonarrEpisodes(instance: DecryptedInstance<ArrCredentials>, seriesId: number) {
   return arrFetch<
-    Array<{ seasonNumber: number; episodeNumber: number; hasFile: boolean }>
+    Array<{
+      id: number;
+      seasonNumber: number;
+      episodeNumber: number;
+      hasFile: boolean;
+      monitored: boolean;
+    }>
   >(instance, `/episode?seriesId=${seriesId}`);
+}
+
+export async function setSonarrEpisodeMonitor(
+  instance: DecryptedInstance<ArrCredentials>,
+  episodeIds: number[],
+  monitored: boolean
+) {
+  if (episodeIds.length === 0) return;
+  return arrFetch(instance, "/episode/monitor", {
+    method: "PUT",
+    body: JSON.stringify({ episodeIds, monitored }),
+  });
+}
+
+export async function searchSonarrEpisodes(
+  instance: DecryptedInstance<ArrCredentials>,
+  episodeIds: number[]
+) {
+  if (episodeIds.length === 0) return;
+  return arrFetch(instance, "/command", {
+    method: "POST",
+    body: JSON.stringify({ name: "EpisodeSearch", episodeIds }),
+  });
 }
