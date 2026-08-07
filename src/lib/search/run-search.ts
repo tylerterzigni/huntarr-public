@@ -3,19 +3,23 @@ import {
   searchMultiMultiPage,
   searchPerson,
 } from "@/lib/integrations/tmdb/client";
-import { mediaItemKey } from "@/lib/integrations/tmdb/helpers";
+import { getMediaTitle, mediaItemKey } from "@/lib/integrations/tmdb/helpers";
 import { enrichWithStatus } from "@/lib/recommendations/filters";
 import {
   fetchPersonFilmography,
   pickPersonForSearch,
 } from "@/lib/recommendations/personal-people";
 import { searchWatchHistory } from "@/lib/recommendations/engine";
-import { sortSearchResults } from "@/lib/search/rank-search-results";
+import { sortSearchResults, titleMatchScore } from "@/lib/search/rank-search-results";
 import {
   SEARCH_PREVIEW_INITIAL,
 } from "@/lib/search/preview-constants";
 import { scorePersonNameMatch } from "@/lib/search/person-name-match";
-import { generateTypoQueryVariants } from "@/lib/search/typo-variants";
+import { compactMatchText } from "@/lib/search/fuzzy-text-match";
+import {
+  generateSpellingQueryVariants,
+  generateWhitespaceQueryVariants,
+} from "@/lib/search/typo-variants";
 import type {
   RecommendationItem,
   TmdbMediaItem,
@@ -57,7 +61,10 @@ async function searchPersonWithTypos(
   const seen = new Set<number>();
   const results: TmdbPersonSearchResult[] = [];
 
-  for (const variant of generateTypoQueryVariants(query, 12)) {
+  for (const variant of [
+    query.trim(),
+    ...generateSpellingQueryVariants(query, 12),
+  ].filter(Boolean)) {
     const search = await searchPerson(variant, 1).catch(() => ({
       results: [] as TmdbPersonSearchResult[],
       total_pages: 0,
@@ -75,21 +82,76 @@ async function searchPersonWithTypos(
   return { results, total_pages: results.length > 0 ? 1 : 0 };
 }
 
-/** Multi search with typo variants when the exact query returns nothing useful. */
+/** Multi search with typo variants when the exact query returns nothing useful.
+ *  Whitespace variants are always merged on page 1 so compacted queries like
+ *  "lovelife" still find "Love Life" even when TMDB returns other weak hits.
+ */
 async function searchMultiWithTypos(
   query: string,
   page: number
 ): Promise<{ results: TmdbMediaItem[]; total_pages: number; page: number }> {
   const first = await searchMulti(query, page);
   const filtered = filterMediaResults(first.results);
+
+  const mergeWhitespaceVariants = async (base: TmdbMediaItem[]) => {
+    const spaceVariants = generateWhitespaceQueryVariants(query, 4);
+    if (spaceVariants.length === 0) return base;
+
+    const seen = new Set(base.map((item) => item.id));
+    const pooled = [...base];
+    for (const variant of spaceVariants) {
+      const data = await searchMulti(variant, 1).catch(() => ({
+        results: [] as TmdbMediaItem[],
+        total_pages: 0,
+      }));
+      for (const item of filterMediaResults(data.results)) {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        pooled.push(item);
+      }
+    }
+    return pooled;
+  };
+
   if (filtered.length > 0 || page > 1) {
-    return { results: filtered, total_pages: first.total_pages, page };
+    if (page > 1) {
+      return { results: filtered, total_pages: first.total_pages, page };
+    }
+    let pooled = await mergeWhitespaceVariants(filtered);
+
+    // If nothing looks like a real title hit, also try spelling fixes
+    // ("ricky gervas" may return weak junk while "ricky gervais" is correct).
+    const bestTitle = Math.max(
+      0,
+      ...pooled.map((item) => titleMatchScore(query, getMediaTitle(item)))
+    );
+    if (bestTitle < 2_000) {
+      const seen = new Set(pooled.map((item) => item.id));
+      for (const variant of generateSpellingQueryVariants(query, 8)) {
+        const data = await searchMulti(variant, 1).catch(() => ({
+          results: [] as TmdbMediaItem[],
+          total_pages: 0,
+        }));
+        for (const item of filterMediaResults(data.results)) {
+          if (seen.has(item.id)) continue;
+          seen.add(item.id);
+          pooled.push(item);
+        }
+        if (
+          pooled.some((item) => titleMatchScore(query, getMediaTitle(item)) >= 2_000)
+        ) {
+          break;
+        }
+      }
+    }
+
+    return { results: pooled, total_pages: first.total_pages, page };
   }
 
   const seen = new Set<number>();
   const pooled: TmdbMediaItem[] = [];
-  for (const variant of generateTypoQueryVariants(query, 10)) {
-    if (variant.toLowerCase() === query.trim().toLowerCase()) continue;
+  // Prefer spelling fixes over whitespace mashups when the typed query missed.
+  for (const variant of generateSpellingQueryVariants(query, 12)) {
     const data = await searchMulti(variant, 1).catch(() => ({
       results: [] as TmdbMediaItem[],
       total_pages: 0,
@@ -211,7 +273,6 @@ export async function runSearch(
   ]);
 
   const personPick = await pickPersonForSearch(userId, query, personSearch.results);
-  const people = personPick ? [toPeopleResult(personPick.person, personPick)] : [];
 
   const page = options.page ?? 1;
   if (page > 1) {
@@ -225,18 +286,35 @@ export async function runSearch(
     };
   }
 
-  const knownForMedia = personPick ? knownForToMedia(personPick.person) : [];
-  const filmography = personPick
-    ? await fetchPersonFilmography(personPick.person.id).catch(() => [])
-    : [];
-
-  const combinedMedia = mergeMediaResults(
-    historyMatches,
-    multiSearch.results,
-    knownForMedia,
-    filmography
+  const primaryMedia = mergeMediaResults(historyMatches, multiSearch.results);
+  const strongTitleMatch = primaryMedia.some(
+    (item) => titleMatchScore(query, getMediaTitle(item)) >= 9_000
   );
+  const mediaClaimsPersonName =
+    !!personPick &&
+    primaryMedia.some(
+      (item) =>
+        compactMatchText(getMediaTitle(item)) === compactMatchText(personPick.person.name) &&
+        titleMatchScore(query, getMediaTitle(item)) >= 9_000
+    );
+  const includePerson =
+    !!personPick &&
+    (personPick.familiar ||
+      (!mediaClaimsPersonName &&
+        (scorePersonNameMatch(query, personPick.person.name) >= 5_000 ||
+          !strongTitleMatch)));
+
+  const knownForMedia =
+    includePerson && personPick ? knownForToMedia(personPick.person) : [];
+  const filmography =
+    includePerson && personPick
+      ? await fetchPersonFilmography(personPick.person.id).catch(() => [])
+      : [];
+
+  const combinedMedia = mergeMediaResults(primaryMedia, knownForMedia, filmography);
   const enriched = await enrichSearchResults(userId, combinedMedia, query);
+  const people =
+    includePerson && personPick ? [toPeopleResult(personPick.person, personPick)] : [];
 
   return {
     results: enriched,
@@ -258,16 +336,50 @@ export async function runSearchPreview(
   const limit = Math.max(1, opts.limit ?? SEARCH_PREVIEW_INITIAL);
   const need = offset + limit + 1; // +1 to detect hasMore
 
-  const [personSearch, firstMulti] = await Promise.all([
+  const [personSearch, firstMulti, historyMatches] = await Promise.all([
     searchPersonWithTypos(query),
     searchMultiWithTypos(query, 1),
+    watchHistoryMediaMatches(userId, query).catch(() => [] as TmdbMediaItem[]),
   ]);
   const personPick = await pickPersonForSearch(userId, query, personSearch.results);
+
+  const mediaPool = mergeMediaResults(historyMatches, firstMulti.results);
+  const rankedMedia = sortSearchResults(query, filterMediaResults(mediaPool));
+
+  // Prefer a title hit over an obscure person with the same compound name
+  // ("lovelife" → show "Love Life", not a random actor also named Love Life).
+  const strongTitleMatch = rankedMedia.some(
+    (item) => titleMatchScore(query, getMediaTitle(item)) >= 9_000
+  );
+  const personNameCompact = personPick
+    ? compactMatchText(personPick.person.name)
+    : "";
+  const mediaClaimsPersonName =
+    !!personPick &&
+    rankedMedia.some(
+      (item) =>
+        compactMatchText(getMediaTitle(item)) === personNameCompact &&
+        titleMatchScore(query, getMediaTitle(item)) >= 9_000
+    );
+  const includePerson =
+    !!personPick &&
+    (personPick.familiar ||
+      (!mediaClaimsPersonName &&
+        (scorePersonNameMatch(query, personPick.person.name) >= 5_000 ||
+          !strongTitleMatch)));
+  const pinPersonFirst =
+    includePerson &&
+    !!personPick &&
+    (personPick.familiar || scorePersonNameMatch(query, personPick.person.name) >= 5_000);
 
   const items: SearchPreviewItem[] = [];
   const seen = new Set<string>();
 
-  if (personPick) {
+  const pushPerson = () => {
+    if (!personPick || !includePerson) return;
+    const key = `person:${personPick.person.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
     items.push({
       kind: "person",
       id: personPick.person.id,
@@ -277,12 +389,13 @@ export async function runSearchPreview(
         ? personPick.familiarLabel
         : personPick.person.known_for_department,
     });
-    seen.add(`person:${personPick.person.id}`);
-  }
+  };
 
-  const appendMultiPage = (results: TmdbMediaItem[]) => {
-    const rankedMedia = sortSearchResults(query, filterMediaResults(results));
-    for (const item of rankedMedia) {
+  if (pinPersonFirst) pushPerson();
+
+  const appendMedia = (results: TmdbMediaItem[]) => {
+    const ranked = sortSearchResults(query, filterMediaResults(results));
+    for (const item of ranked) {
       const key = `${item.media_type}:${item.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -296,17 +409,18 @@ export async function runSearchPreview(
     }
   };
 
-  let page = 1;
-  let totalPages = Math.max(1, firstMulti.total_pages);
-  appendMultiPage(firstMulti.results);
-  page = 2;
+  appendMedia(mediaPool);
 
+  let page = 2;
+  let totalPages = Math.max(1, firstMulti.total_pages);
   while (items.length < need && page <= totalPages) {
     const multi = await searchMulti(query, page);
     totalPages = Math.max(totalPages, multi.total_pages);
-    appendMultiPage(multi.results);
+    appendMedia(multi.results);
     page += 1;
   }
+
+  if (!pinPersonFirst) pushPerson();
 
   return {
     items: items.slice(offset, offset + limit),

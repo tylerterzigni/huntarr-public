@@ -14,6 +14,11 @@ export function normalizeMatchText(value: string): string {
     .trim();
 }
 
+/** Lowercase alphanumeric only — ignores spacing differences in compound titles. */
+export function compactMatchText(value: string): string {
+  return normalizeMatchText(value).replace(/\s+/g, "");
+}
+
 export function tokenizeMatchText(value: string): string[] {
   return normalizeMatchText(value).split(" ").filter(Boolean);
 }
@@ -73,6 +78,59 @@ function tokensLikelyMatch(
   return levenshteinDistance(q, c) <= maxTokenEditDistance(Math.max(q.length, c.length));
 }
 
+/**
+ * How many query tokens (from startQi) best cover one candidate token.
+ * Tries longest joins first so "cross"+"road" matches "crossroad" instead of
+ * stopping after the "cross" prefix alone.
+ */
+function queryTokensConsumedByCandidate(
+  qParts: string[],
+  startQi: number,
+  namePart: string,
+  options: TextMatchOptions
+): number {
+  if (startQi >= qParts.length) return 0;
+
+  for (let end = qParts.length; end > startQi; end--) {
+    const joined = qParts.slice(startQi, end).join("");
+    if (joined.length > namePart.length + 2) continue;
+    if (tokensLikelyMatch(joined, namePart, options)) {
+      return end - startQi;
+    }
+  }
+
+  const head = qParts[startQi];
+  if (namePart.startsWith(head) && head.length >= 3) {
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * Consume query tokens left-to-right against candidate tokens, allowing
+ * consecutive query tokens to concatenate into one candidate token
+ * ("cross"+"road" → "crossroad").
+ */
+function tokensCoverCandidate(
+  qParts: string[],
+  nameParts: string[],
+  options: TextMatchOptions
+): boolean {
+  let qi = 0;
+  for (const namePart of nameParts) {
+    if (qi >= qParts.length) return true;
+    const used = queryTokensConsumedByCandidate(qParts, qi, namePart, options);
+    if (used > 0) {
+      qi += used;
+      continue;
+    }
+    // Skip short filler candidate tokens (e.g. articles already stripped, but keep safe).
+    if (namePart.length <= 3) continue;
+    return false;
+  }
+  return qi >= qParts.length;
+}
+
 export function textsLikelyMatch(
   query: string,
   candidate: string,
@@ -83,6 +141,26 @@ export function textsLikelyMatch(
   const name = normalizeMatchText(candidate);
   if (!q || !name) return false;
   if (name === q) return true;
+
+  // Ignore spacing in compound titles: "cross road springs" ↔ "crossroad springs".
+  if (mode !== "person") {
+    const qCompact = compactMatchText(query);
+    const nameCompact = compactMatchText(candidate);
+    if (qCompact && nameCompact) {
+      if (qCompact === nameCompact) return true;
+      if (qCompact.length >= 4 && (nameCompact.includes(qCompact) || qCompact.includes(nameCompact))) {
+        return true;
+      }
+      const compactMax = Math.max(qCompact.length, nameCompact.length);
+      if (
+        compactMax >= 4 &&
+        levenshteinDistance(qCompact, nameCompact) <= maxFullStringEditDistance(compactMax, mode)
+      ) {
+        return true;
+      }
+    }
+  }
+
   if (mode === "person") {
     // Avoid "christmas" ⊆/⊇ "chris" style false positives on full-string includes.
     if (name.startsWith(q + " ") || name.endsWith(" " + q) || name.includes(" " + q + " ")) {
@@ -109,6 +187,10 @@ export function textsLikelyMatch(
     return significantParts.some((part) => tokensLikelyMatch(qParts[0], part, options));
   }
 
+  if (mode !== "person" && tokensCoverCandidate(qParts, nameParts, options)) {
+    return true;
+  }
+
   return qParts.every((qPart) =>
     nameParts.some(
       (namePart) =>
@@ -128,10 +210,35 @@ export function scoreTextMatch(
   if (!q || !name) return -1;
 
   if (name === q) return 10_000;
+
+  if (mode !== "person") {
+    const qCompact = compactMatchText(query);
+    const nameCompact = compactMatchText(candidate);
+    if (qCompact && nameCompact && qCompact === nameCompact) {
+      // Same letters, different spacing — treat almost as exact.
+      return 9_500;
+    }
+  }
+
   if (name.startsWith(q)) return 5_000;
   if (mode !== "person" && q.startsWith(name)) return 4_000;
   if (name.includes(q)) return 1_000;
   if (mode !== "person" && q.includes(name)) return 800;
+
+  if (mode !== "person") {
+    const qCompact = compactMatchText(query);
+    const nameCompact = compactMatchText(candidate);
+    if (qCompact.length >= 4 && nameCompact.length >= 4) {
+      if (nameCompact.includes(qCompact) || qCompact.includes(nameCompact)) {
+        return 3_500;
+      }
+      const compactMax = Math.max(qCompact.length, nameCompact.length);
+      const compactDist = levenshteinDistance(qCompact, nameCompact);
+      if (compactDist <= maxFullStringEditDistance(compactMax, mode)) {
+        return 2_800 - compactDist * 100;
+      }
+    }
+  }
 
   const maxLen = Math.max(q.length, name.length);
   if (maxLen >= 4) {

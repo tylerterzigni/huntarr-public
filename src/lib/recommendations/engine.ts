@@ -73,6 +73,7 @@ import {
   type CandidateRtRatings,
 } from "./quality-score";
 import { listLikedMedia, listLikedPeople } from "@/lib/liked-list";
+import { textsLikelyMatch } from "@/lib/search/fuzzy-text-match";
 import {
   compareByLocalePreference,
   passesHomeLocaleFilter,
@@ -2227,7 +2228,7 @@ export async function searchWatchHistory(
   query: string,
   limit = 25
 ): Promise<WatchSeed[]> {
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
   const entries = dedupeAndSortWatchEntries(await getUserWatchHistoryEntries(userId));
   const titleCache = new Map<string, string>();
   const results: WatchSeed[] = [];
@@ -2235,7 +2236,7 @@ export async function searchWatchHistory(
   for (const entry of entries) {
     const title = await resolveWatchSeedTitle(entry, titleCache);
     if (!title) continue;
-    if (q && !title.toLowerCase().includes(q)) continue;
+    if (q && !textsLikelyMatch(q, title, { mode: "title" })) continue;
     results.push({ tmdbId: entry.tmdbId, mediaType: entry.mediaType, title });
     if (results.length >= limit) break;
   }
