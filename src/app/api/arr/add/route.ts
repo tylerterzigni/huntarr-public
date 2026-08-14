@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getDecryptedArrInstance } from "@/lib/settings/integrations";
+import { getDecryptedArrInstance, type DecryptedInstance } from "@/lib/settings/integrations";
 import {
   lookupRadarrMovie,
   addRadarrMovie,
@@ -8,10 +8,14 @@ import {
 import {
   lookupSonarrByTmdb,
   addSonarrSeries,
+  findExistingSonarrSeries,
+  updateSonarrSeries,
   getSonarrEpisodes,
   setSonarrEpisodeMonitor,
   searchSonarrEpisodes,
+  searchSonarrSeason,
 } from "@/lib/integrations/sonarr/client";
+import type { ArrCredentials } from "@/types";
 import { clearArrLibraryCache } from "@/lib/integrations/arr/library";
 import { db } from "@/lib/db";
 import { arrRequestsLog, integrationInstances } from "@/lib/db/schema";
@@ -88,73 +92,90 @@ export async function POST(request: Request) {
       for (const entry of data.episodes ?? []) {
         episodeSelection.set(entry.seasonNumber, new Set(entry.episodeNumbers));
       }
-      const hasPartialEpisodes = episodeSelection.size > 0;
+      const hasEpisodePicks = episodeSelection.size > 0;
+      const lookupSeasons = asSeasonRecords(series.seasons);
 
-      const lookupSeasons = Array.isArray(series.seasons)
-        ? (series.seasons as Array<Record<string, unknown>>)
-        : [];
-      const seasons =
-        selectedSeasons.size > 0
-          ? lookupSeasons.map((season) => {
-              const seasonNumber = Number(season.seasonNumber ?? 0);
-              return {
-                ...season,
-                monitored: selectedSeasons.has(seasonNumber),
-              };
-            })
-          : lookupSeasons.map((season) => ({
-              ...season,
-              // Default: monitor regular seasons only (not specials)
-              monitored: Number(season.seasonNumber ?? 0) > 0,
-            }));
+      const existing = await findExistingSonarrSeries(instance, {
+        seriesId: Number(series.id) || undefined,
+        tvdbId: Number(series.tvdbId) || undefined,
+        tmdbId: data.tmdbId,
+      });
 
-      const payload = {
-        ...series,
-        qualityProfileId: data.qualityProfileId ?? instance.config.defaultQualityProfileId ?? 1,
-        rootFolderPath: data.rootFolder ?? instance.config.defaultRootFolder ?? "/tv",
-        languageProfileId: data.languageProfileId ?? instance.config.defaultLanguageProfileId ?? 1,
-        seasonFolder: true,
-        monitored: true,
-        seasons,
-        seriesType: instance.config.defaultSeriesType ?? "standard",
-        addOptions: {
-          // Defer search until after per-episode monitors are applied when needed
-          searchForMissingEpisodes: !hasPartialEpisodes,
-          searchForCutoffUnmetEpisodes: false,
-        },
-      };
+      if (existing) {
+        const seasons = mergeSeasonMonitors({
+          existingSeasons: asSeasonRecords(existing.seasons),
+          lookupSeasons,
+          selectedSeasons,
+          additive: true,
+        });
 
-      const created = await addSonarrSeries(instance, payload);
+        const previousEpisodes = await getSonarrEpisodes(instance, existing.id);
+        const previouslyMonitored = new Set(
+          previousEpisodes.filter((episode) => episode.monitored).map((episode) => episode.id)
+        );
 
-      if (hasPartialEpisodes && typeof created.id === "number") {
-        const sonarrEpisodes = await getSonarrEpisodes(instance, created.id);
-        const toUnmonitor: number[] = [];
-        const toMonitor: number[] = [];
-        const toSearch: number[] = [];
+        const updated = await updateSonarrSeries(instance, {
+          ...existing,
+          monitored: true,
+          seasons,
+        });
+        const seriesId = updated.id ?? existing.id;
 
-        for (const episode of sonarrEpisodes) {
-          const selected = episodeSelection.get(episode.seasonNumber);
-          if (!selected) {
-            if (episode.monitored && !episode.hasFile) {
-              toSearch.push(episode.id);
-            }
-            continue;
+        const synced = await syncSonarrEpisodeSelection(
+          instance,
+          seriesId,
+          episodeSelection,
+          {
+            unmonitorUnselected: true,
+            preserveMonitoredIds: previouslyMonitored,
+            searchUnselectedMonitored: false,
           }
+        );
 
-          const shouldMonitor = selected.has(episode.episodeNumber);
-          if (shouldMonitor && !episode.monitored) {
-            toMonitor.push(episode.id);
-          } else if (!shouldMonitor && episode.monitored) {
-            toUnmonitor.push(episode.id);
-          }
-          if (shouldMonitor && !episode.hasFile) {
-            toSearch.push(episode.id);
-          }
+        const seasonsToSearch = hasEpisodePicks
+          ? [...episodeSelection.keys()].filter(
+              (seasonNumber) => !synced.seasonsWithEpisodes.has(seasonNumber)
+            )
+          : [
+              ...(selectedSeasons.size > 0
+                ? selectedSeasons
+                : seasons
+                    .map((season) => Number(season.seasonNumber ?? 0))
+                    .filter((seasonNumber) => seasonNumber > 0)),
+            ];
+
+        for (const seasonNumber of seasonsToSearch) {
+          await searchSonarrSeason(instance, seriesId, seasonNumber);
         }
+      } else {
+        const seasons = mergeSeasonMonitors({
+          existingSeasons: [],
+          lookupSeasons,
+          selectedSeasons,
+          additive: false,
+        });
 
-        await setSonarrEpisodeMonitor(instance, toUnmonitor, false);
-        await setSonarrEpisodeMonitor(instance, toMonitor, true);
-        await searchSonarrEpisodes(instance, toSearch);
+        const created = await addSonarrSeries(instance, {
+          ...series,
+          qualityProfileId: data.qualityProfileId ?? instance.config.defaultQualityProfileId ?? 1,
+          rootFolderPath: data.rootFolder ?? instance.config.defaultRootFolder ?? "/tv",
+          languageProfileId: data.languageProfileId ?? instance.config.defaultLanguageProfileId ?? 1,
+          seasonFolder: true,
+          monitored: true,
+          seasons,
+          seriesType: instance.config.defaultSeriesType ?? "standard",
+          addOptions: {
+            searchForMissingEpisodes: !hasEpisodePicks,
+            searchForCutoffUnmetEpisodes: false,
+          },
+        });
+
+        if (hasEpisodePicks && typeof created.id === "number") {
+          await syncSonarrEpisodeSelection(instance, created.id, episodeSelection, {
+            unmonitorUnselected: true,
+            searchUnselectedMonitored: true,
+          });
+        }
       }
     } else {
       return NextResponse.json({ error: "Invalid instance/type combination" }, { status: 400 });
@@ -178,4 +199,110 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+type ArrInstance = DecryptedInstance<ArrCredentials>;
+
+type SeasonRecord = Record<string, unknown> & {
+  seasonNumber?: number;
+  monitored?: boolean;
+};
+
+function asSeasonRecords(value: unknown): SeasonRecord[] {
+  return Array.isArray(value) ? (value as SeasonRecord[]) : [];
+}
+
+function mergeSeasonMonitors({
+  existingSeasons,
+  lookupSeasons,
+  selectedSeasons,
+  additive,
+}: {
+  existingSeasons: SeasonRecord[];
+  lookupSeasons: SeasonRecord[];
+  selectedSeasons: Set<number>;
+  additive: boolean;
+}): SeasonRecord[] {
+  const existingByNumber = new Map(
+    existingSeasons.map((season) => [Number(season.seasonNumber ?? 0), season])
+  );
+  const source = lookupSeasons.length > 0 ? lookupSeasons : existingSeasons;
+  const seen = new Set<number>();
+
+  const merged = source.map((season) => {
+    const seasonNumber = Number(season.seasonNumber ?? 0);
+    seen.add(seasonNumber);
+    const existingSeason = existingByNumber.get(seasonNumber);
+    const alreadyMonitored = Boolean(existingSeason?.monitored);
+    const requested =
+      selectedSeasons.size > 0 ? selectedSeasons.has(seasonNumber) : seasonNumber > 0;
+    return {
+      ...(existingSeason ?? { seasonNumber }),
+      monitored: additive ? alreadyMonitored || requested : requested,
+    };
+  });
+
+  for (const [seasonNumber, existingSeason] of existingByNumber) {
+    if (seen.has(seasonNumber)) continue;
+    const requested = selectedSeasons.has(seasonNumber);
+    merged.push({
+      ...existingSeason,
+      monitored: additive ? Boolean(existingSeason.monitored) || requested : requested,
+    });
+  }
+
+  return merged;
+}
+
+async function syncSonarrEpisodeSelection(
+  instance: ArrInstance,
+  seriesId: number,
+  episodeSelection: Map<number, Set<number>>,
+  options: {
+    unmonitorUnselected: boolean;
+    searchUnselectedMonitored: boolean;
+    preserveMonitoredIds?: Set<number>;
+  }
+) {
+  const seasonsWithEpisodes = new Set<number>();
+  if (episodeSelection.size === 0) {
+    return { seasonsWithEpisodes };
+  }
+
+  const sonarrEpisodes = await getSonarrEpisodes(instance, seriesId);
+  const toUnmonitor: number[] = [];
+  const toMonitor: number[] = [];
+  const toSearch: number[] = [];
+
+  for (const episode of sonarrEpisodes) {
+    const selected = episodeSelection.get(episode.seasonNumber);
+    if (!selected) {
+      if (options.searchUnselectedMonitored && episode.monitored && !episode.hasFile) {
+        toSearch.push(episode.id);
+      }
+      continue;
+    }
+
+    seasonsWithEpisodes.add(episode.seasonNumber);
+    const shouldMonitor = selected.has(episode.episodeNumber);
+    if (shouldMonitor && !episode.monitored) {
+      toMonitor.push(episode.id);
+    } else if (
+      !shouldMonitor &&
+      episode.monitored &&
+      options.unmonitorUnselected &&
+      !options.preserveMonitoredIds?.has(episode.id)
+    ) {
+      toUnmonitor.push(episode.id);
+    }
+    if (shouldMonitor && !episode.hasFile) {
+      toSearch.push(episode.id);
+    }
+  }
+
+  await setSonarrEpisodeMonitor(instance, toUnmonitor, false);
+  await setSonarrEpisodeMonitor(instance, toMonitor, true);
+  await searchSonarrEpisodes(instance, toSearch);
+
+  return { seasonsWithEpisodes };
 }
