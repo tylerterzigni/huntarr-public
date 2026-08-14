@@ -176,20 +176,40 @@ function knownForToMedia(person: TmdbPersonSearchResult): TmdbMediaItem[] {
     }));
 }
 
+/** Keep first-seen order; copy missing fields (especially poster_path) from later hits. */
+function coalesceMediaFields(primary: TmdbMediaItem, extra: TmdbMediaItem): TmdbMediaItem {
+  return {
+    ...extra,
+    ...primary,
+    poster_path: primary.poster_path ?? extra.poster_path,
+    backdrop_path: primary.backdrop_path ?? extra.backdrop_path,
+    overview: primary.overview ?? extra.overview,
+    vote_average: primary.vote_average ?? extra.vote_average,
+    vote_count: primary.vote_count ?? extra.vote_count,
+    popularity: primary.popularity ?? extra.popularity,
+    release_date: primary.release_date ?? extra.release_date,
+    first_air_date: primary.first_air_date ?? extra.first_air_date,
+    genre_ids: primary.genre_ids ?? extra.genre_ids,
+    original_language: primary.original_language ?? extra.original_language,
+    origin_country: primary.origin_country ?? extra.origin_country,
+    runtime: primary.runtime ?? extra.runtime,
+    title: primary.title ?? extra.title,
+    name: primary.name ?? extra.name,
+  };
+}
+
 function mergeMediaResults(...lists: TmdbMediaItem[][]): TmdbMediaItem[] {
-  const seen = new Set<string>();
-  const merged: TmdbMediaItem[] = [];
+  const seen = new Map<string, TmdbMediaItem>();
 
   for (const list of lists) {
     for (const item of list) {
       const key = mediaItemKey(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(item);
+      const existing = seen.get(key);
+      seen.set(key, existing ? coalesceMediaFields(existing, item) : item);
     }
   }
 
-  return merged;
+  return Array.from(seen.values());
 }
 
 function toPeopleResult(
