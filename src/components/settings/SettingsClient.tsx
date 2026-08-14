@@ -71,6 +71,7 @@ interface SettingsData {
     recommendationWeights: Record<string, number>;
     recommendationKeywords: string[];
     homeRowOrder?: string[];
+    homeRowHidden?: string[];
   } | null;
   userRole: string;
 }
@@ -375,16 +376,16 @@ export function SettingsClient() {
     load();
   }
 
-  async function saveHomePageOrder(homeRowOrder: HomeRowId[]) {
+  async function saveHomePageLayout(homeRowOrder: HomeRowId[], homeRowHidden: HomeRowId[]) {
     await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         section: "home-page",
-        data: { homeRowOrder },
+        data: { homeRowOrder, homeRowHidden },
       }),
     });
-    setMessage("Home page row order saved");
+    setMessage("Home page layout saved");
     load();
   }
 
@@ -899,7 +900,8 @@ export function SettingsClient() {
         <TabsContent value="home-page" className="mt-6">
           <HomePageSettings
             homeRowOrder={data.preferences?.homeRowOrder}
-            onSave={saveHomePageOrder}
+            homeRowHidden={data.preferences?.homeRowHidden}
+            onSave={saveHomePageLayout}
           />
         </TabsContent>
 

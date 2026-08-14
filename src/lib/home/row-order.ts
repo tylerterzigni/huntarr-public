@@ -50,3 +50,21 @@ export function normalizeHomeRowOrder(saved: unknown): HomeRowId[] {
 
   return ordered;
 }
+
+/** Keep known row IDs only; unknown and duplicate entries are dropped. */
+export function normalizeHomeRowHidden(saved: unknown): HomeRowId[] {
+  if (!Array.isArray(saved)) return [];
+  const seen = new Set<HomeRowId>();
+  const hidden: HomeRowId[] = [];
+  for (const entry of saved) {
+    if (typeof entry !== "string" || !isHomeRowId(entry) || seen.has(entry)) continue;
+    seen.add(entry);
+    hidden.push(entry);
+  }
+  return hidden;
+}
+
+export function visibleHomeRows(order: HomeRowId[], hidden: HomeRowId[]): HomeRowId[] {
+  const hiddenSet = new Set(hidden);
+  return order.filter((id) => !hiddenSet.has(id));
+}
