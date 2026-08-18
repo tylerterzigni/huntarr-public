@@ -6,7 +6,7 @@ import {
   addRadarrMovie,
 } from "@/lib/integrations/radarr/client";
 import {
-  lookupSonarrByTmdb,
+  lookupSonarrSeriesMatch,
   addSonarrSeries,
   findExistingSonarrSeries,
   updateSonarrSeries,
@@ -15,6 +15,7 @@ import {
   searchSonarrEpisodes,
   searchSonarrSeason,
 } from "@/lib/integrations/sonarr/client";
+import { getExternalIds } from "@/lib/integrations/tmdb/client";
 import type { ArrCredentials } from "@/types";
 import { clearArrLibraryCache } from "@/lib/integrations/arr/library";
 import { db } from "@/lib/db";
@@ -82,7 +83,22 @@ export async function POST(request: Request) {
 
       await addRadarrMovie(instance, payload);
     } else if (dbInstance.type === "sonarr" && data.mediaType === "tv") {
-      const series = await lookupSonarrByTmdb(instance, data.tmdbId);
+      let tvdbId: number | undefined;
+      let imdbId: string | undefined;
+      try {
+        const external = await getExternalIds("tv", data.tmdbId);
+        tvdbId = external.tvdb_id ?? undefined;
+        imdbId = external.imdb_id ?? undefined;
+      } catch {
+        // Sonarr can still match via tmdb: or title if TMDB extras fail.
+      }
+
+      const series = await lookupSonarrSeriesMatch(instance, {
+        tmdbId: data.tmdbId,
+        tvdbId,
+        imdbId,
+        title: data.title,
+      });
       if (!series) {
         return NextResponse.json({ error: "Series not found" }, { status: 404 });
       }

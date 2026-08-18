@@ -40,20 +40,128 @@ export async function getSonarrRootFolders(instance: DecryptedInstance<ArrCreden
   return arrFetch<Array<{ id: number; path: string }>>(instance, "/rootfolder");
 }
 
-export async function lookupSonarrSeries(instance: DecryptedInstance<ArrCredentials>, tvdbId: number) {
-  const results = await arrFetch<Array<Record<string, unknown>>>(
+export type SonarrLookupQuery = {
+  tmdbId: number;
+  tvdbId?: number | null;
+  imdbId?: string | null;
+  title?: string | null;
+};
+
+async function lookupByTerm(
+  instance: DecryptedInstance<ArrCredentials>,
+  term: string
+) {
+  return arrFetch<Array<Record<string, unknown>>>(
     instance,
-    `/series/lookup?term=tvdb:${tvdbId}`
+    `/series/lookup?term=${encodeURIComponent(term)}`
   );
-  return results[0] ?? null;
+}
+
+function normalizeSeriesTitle(title: string) {
+  return title
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function pickMatchingSeries(
+  results: Array<Record<string, unknown>>,
+  query: SonarrLookupQuery,
+  allowFirst: boolean
+): Record<string, unknown> | null {
+  if (results.length === 0) return null;
+
+  if (query.tvdbId && query.tvdbId > 0) {
+    const match = results.find((series) => Number(series.tvdbId) === query.tvdbId);
+    if (match) return match;
+  }
+
+  if (query.tmdbId > 0) {
+    const match = results.find((series) => Number(series.tmdbId) === query.tmdbId);
+    if (match) return match;
+  }
+
+  const imdb = query.imdbId?.trim().toLowerCase();
+  if (imdb) {
+    const match = results.find(
+      (series) => String(series.imdbId ?? "").toLowerCase() === imdb
+    );
+    if (match) return match;
+  }
+
+  const wantTitle = query.title ? normalizeSeriesTitle(query.title) : "";
+  if (wantTitle) {
+    const exact = results.find(
+      (series) => normalizeSeriesTitle(String(series.title ?? "")) === wantTitle
+    );
+    if (exact) return exact;
+
+    const contains = results.filter((series) => {
+      const got = normalizeSeriesTitle(String(series.title ?? ""));
+      return got.includes(wantTitle) || wantTitle.includes(got);
+    });
+    if (contains.length === 1) return contains[0];
+    if (contains.length > 1 && allowFirst) return contains[0];
+  }
+
+  if (allowFirst || results.length === 1) return results[0] ?? null;
+  return null;
+}
+
+/**
+ * Resolve a TMDB series to a Sonarr lookup payload.
+ * Sonarr/Skyhook is TVDB-first; `tmdb:` often returns nothing even when the
+ * show is searchable by TVDB ID, IMDb ID, or title.
+ */
+export async function lookupSonarrSeriesMatch(
+  instance: DecryptedInstance<ArrCredentials>,
+  query: SonarrLookupQuery
+): Promise<Record<string, unknown> | null> {
+  if (query.tvdbId && query.tvdbId > 0) {
+    const match = pickMatchingSeries(
+      await lookupByTerm(instance, `tvdb:${query.tvdbId}`),
+      query,
+      true
+    );
+    if (match) return match;
+  }
+
+  const imdb = query.imdbId?.trim();
+  if (imdb) {
+    const match = pickMatchingSeries(
+      await lookupByTerm(instance, `imdb:${imdb}`),
+      query,
+      true
+    );
+    if (match) return match;
+  }
+
+  if (query.tmdbId > 0) {
+    const match = pickMatchingSeries(
+      await lookupByTerm(instance, `tmdb:${query.tmdbId}`),
+      query,
+      true
+    );
+    if (match) return match;
+  }
+
+  const title = query.title?.trim();
+  if (title) {
+    const match = pickMatchingSeries(await lookupByTerm(instance, title), query, false);
+    if (match) return match;
+  }
+
+  return null;
+}
+
+export async function lookupSonarrSeries(instance: DecryptedInstance<ArrCredentials>, tvdbId: number) {
+  return lookupSonarrSeriesMatch(instance, { tmdbId: 0, tvdbId });
 }
 
 export async function lookupSonarrByTmdb(instance: DecryptedInstance<ArrCredentials>, tmdbId: number) {
-  const results = await arrFetch<Array<Record<string, unknown>>>(
-    instance,
-    `/series/lookup?term=tmdb:${tmdbId}`
-  );
-  return results[0] ?? null;
+  return lookupSonarrSeriesMatch(instance, { tmdbId });
 }
 
 export type SonarrSeriesResource = { id: number } & Record<string, unknown>;
