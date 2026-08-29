@@ -123,4 +123,9 @@ export interface ArrAddRequest {
    * Seasons omitted here keep Sonarr's default (all episodes monitored for selected seasons).
    */
   episodes?: Array<{ seasonNumber: number; episodeNumbers: number[] }>;
+  /**
+   * When true (default), Radarr/Sonarr search and download after adding.
+   * When false, the title is added to the library as monitored but is not searched.
+   */
+  searchForMissing?: boolean;
 }

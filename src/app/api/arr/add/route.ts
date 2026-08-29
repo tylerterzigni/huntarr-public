@@ -45,6 +45,8 @@ const addSchema = z.object({
       })
     )
     .optional(),
+  /** When false, add/monitor only — do not search or download. Defaults to true. */
+  searchForMissing: z.boolean().optional().default(true),
 });
 
 export async function POST(request: Request) {
@@ -78,7 +80,7 @@ export async function POST(request: Request) {
         qualityProfileId: data.qualityProfileId ?? instance.config.defaultQualityProfileId ?? 1,
         rootFolderPath: data.rootFolder ?? instance.config.defaultRootFolder ?? "/movies",
         monitored: true,
-        addOptions: { searchForMovie: true },
+        addOptions: { searchForMovie: data.searchForMissing },
       };
 
       await addRadarrMovie(instance, payload);
@@ -145,23 +147,26 @@ export async function POST(request: Request) {
             unmonitorUnselected: true,
             preserveMonitoredIds: previouslyMonitored,
             searchUnselectedMonitored: false,
+            searchMissing: data.searchForMissing,
           }
         );
 
-        const seasonsToSearch = hasEpisodePicks
-          ? [...episodeSelection.keys()].filter(
-              (seasonNumber) => !synced.seasonsWithEpisodes.has(seasonNumber)
-            )
-          : [
-              ...(selectedSeasons.size > 0
-                ? selectedSeasons
-                : seasons
-                    .map((season) => Number(season.seasonNumber ?? 0))
-                    .filter((seasonNumber) => seasonNumber > 0)),
-            ];
+        if (data.searchForMissing) {
+          const seasonsToSearch = hasEpisodePicks
+            ? [...episodeSelection.keys()].filter(
+                (seasonNumber) => !synced.seasonsWithEpisodes.has(seasonNumber)
+              )
+            : [
+                ...(selectedSeasons.size > 0
+                  ? selectedSeasons
+                  : seasons
+                      .map((season) => Number(season.seasonNumber ?? 0))
+                      .filter((seasonNumber) => seasonNumber > 0)),
+              ];
 
-        for (const seasonNumber of seasonsToSearch) {
-          await searchSonarrSeason(instance, seriesId, seasonNumber);
+          for (const seasonNumber of seasonsToSearch) {
+            await searchSonarrSeason(instance, seriesId, seasonNumber);
+          }
         }
       } else {
         const seasons = mergeSeasonMonitors({
@@ -181,7 +186,7 @@ export async function POST(request: Request) {
           seasons,
           seriesType: instance.config.defaultSeriesType ?? "standard",
           addOptions: {
-            searchForMissingEpisodes: !hasEpisodePicks,
+            searchForMissingEpisodes: data.searchForMissing && !hasEpisodePicks,
             searchForCutoffUnmetEpisodes: false,
           },
         });
@@ -189,7 +194,8 @@ export async function POST(request: Request) {
         if (hasEpisodePicks && typeof created.id === "number") {
           await syncSonarrEpisodeSelection(instance, created.id, episodeSelection, {
             unmonitorUnselected: true,
-            searchUnselectedMonitored: true,
+            searchUnselectedMonitored: data.searchForMissing,
+            searchMissing: data.searchForMissing,
           });
         }
       }
@@ -278,6 +284,7 @@ async function syncSonarrEpisodeSelection(
     unmonitorUnselected: boolean;
     searchUnselectedMonitored: boolean;
     preserveMonitoredIds?: Set<number>;
+    searchMissing?: boolean;
   }
 ) {
   const seasonsWithEpisodes = new Set<number>();
@@ -285,6 +292,7 @@ async function syncSonarrEpisodeSelection(
     return { seasonsWithEpisodes };
   }
 
+  const searchMissing = options.searchMissing !== false;
   const sonarrEpisodes = await getSonarrEpisodes(instance, seriesId);
   const toUnmonitor: number[] = [];
   const toMonitor: number[] = [];
@@ -293,7 +301,12 @@ async function syncSonarrEpisodeSelection(
   for (const episode of sonarrEpisodes) {
     const selected = episodeSelection.get(episode.seasonNumber);
     if (!selected) {
-      if (options.searchUnselectedMonitored && episode.monitored && !episode.hasFile) {
+      if (
+        searchMissing &&
+        options.searchUnselectedMonitored &&
+        episode.monitored &&
+        !episode.hasFile
+      ) {
         toSearch.push(episode.id);
       }
       continue;
@@ -311,7 +324,7 @@ async function syncSonarrEpisodeSelection(
     ) {
       toUnmonitor.push(episode.id);
     }
-    if (shouldMonitor && !episode.hasFile) {
+    if (searchMissing && shouldMonitor && !episode.hasFile) {
       toSearch.push(episode.id);
     }
   }

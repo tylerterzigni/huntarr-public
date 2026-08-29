@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { posterUrl, profileUrl, cn } from "@/lib/utils";
 import { PosterImage } from "@/components/media/PosterImage";
+import { useClampedDropdownStyle } from "@/components/search/use-clamped-dropdown-style";
 import type { SearchPreviewItem } from "@/lib/search/run-search";
 
 function previewHref(item: SearchPreviewItem): string {
@@ -55,6 +57,8 @@ interface SearchPreviewDropdownProps {
   onSelect: () => void;
   onLoadMore?: () => void;
   onScrollContent?: () => void;
+  /** Search field — used to pin the mobile dropdown to the visual viewport. */
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
 export function SearchPreviewDropdown({
@@ -66,9 +70,17 @@ export function SearchPreviewDropdown({
   onSelect,
   onLoadMore,
   onScrollContent,
+  anchorRef,
 }: SearchPreviewDropdownProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const fallbackAnchorRef = useRef<HTMLDivElement>(null);
+  const dropdownStyle = useClampedDropdownStyle(
+    anchorRef ?? fallbackAnchorRef,
+    Boolean(anchorRef),
+    420,
+    { align: "center" }
+  );
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -88,17 +100,25 @@ export function SearchPreviewDropdown({
     return () => observer.disconnect();
   }, [hasMore, onLoadMore, loadingMore, items.length]);
 
-  return (
+  const dropdown = (
     <div
+      data-search-preview
       className={cn(
         "z-50 rounded-lg border border-gray-300 bg-white shadow-xl",
-        "absolute left-0 top-full mt-2 w-[min(100vw-2rem,420px)]",
-        "max-md:fixed max-md:left-1/2 max-md:top-[calc(var(--safe-area-top)+5rem+0.5rem)] max-md:mt-0 max-md:w-[min(calc(100vw-2rem),420px)] max-md:-translate-x-1/2"
+        dropdownStyle
+          ? undefined
+          : "absolute left-0 top-full mt-2 w-[min(100vw-2rem,420px)]"
       )}
+      style={dropdownStyle}
     >
       <div
         ref={scrollRef}
         className="max-h-[min(26rem,calc(100dvh-var(--safe-area-top)-8rem))] overflow-x-hidden overflow-y-auto p-4"
+        style={
+          dropdownStyle?.maxHeight
+            ? { maxHeight: dropdownStyle.maxHeight }
+            : undefined
+        }
         onScroll={onScrollContent}
         onTouchMove={onScrollContent}
       >
@@ -136,4 +156,10 @@ export function SearchPreviewDropdown({
       </div>
     </div>
   );
+
+  if (dropdownStyle && typeof document !== "undefined") {
+    return createPortal(dropdown, document.body);
+  }
+
+  return dropdown;
 }

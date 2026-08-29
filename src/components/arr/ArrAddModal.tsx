@@ -40,6 +40,28 @@ interface TmdbEpisode {
   air_date?: string;
 }
 
+const SEARCH_MISSING_STORAGE_KEY = "huntarr-arr-search-for-missing";
+
+function readSearchForMissingPreference(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const stored = window.localStorage.getItem(SEARCH_MISSING_STORAGE_KEY);
+    if (stored === "false") return false;
+    if (stored === "true") return true;
+  } catch {
+    // localStorage may be unavailable
+  }
+  return true;
+}
+
+function writeSearchForMissingPreference(value: boolean) {
+  try {
+    window.localStorage.setItem(SEARCH_MISSING_STORAGE_KEY, String(value));
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
 type SeasonStatus = "available" | "partial" | "not_requested";
 
 type EpisodeSelection = Map<number, Set<number>>;
@@ -190,6 +212,7 @@ export function ArrAddModal({
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [searchForMissing, setSearchForMissing] = useState(true);
 
   const isTv = mediaType === "tv";
   const backdrop = backdropUrl(backdropPath);
@@ -246,6 +269,10 @@ export function ArrAddModal({
     });
 
   useEffect(() => {
+    setSearchForMissing(readSearchForMissingPreference());
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
 
     setSuccess(false);
@@ -254,6 +281,7 @@ export function ArrAddModal({
     setExpandedSeasons(new Set());
     setLoadedEpisodes({});
     setLoadingSeason(null);
+    setSearchForMissing(readSearchForMissingPreference());
     setSelectedEpisodes(
       buildInitialSelection(seasons, new Set(episodeAvailability), seasonAvailability)
     );
@@ -401,6 +429,7 @@ export function ArrAddModal({
           title,
           qualityProfileId,
           rootFolder,
+          searchForMissing,
           ...(isTv
             ? {
                 seasons: seasonsPayload,
@@ -682,6 +711,24 @@ export function ArrAddModal({
                 </div>
 
                 {error && <p className="text-sm text-red-600">{error}</p>}
+
+                <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-400 accent-seerr-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-seerr-accent focus-visible:ring-offset-2"
+                    checked={searchForMissing}
+                    onChange={(event) => {
+                      const next = event.target.checked;
+                      setSearchForMissing(next);
+                      writeSearchForMissingPreference(next);
+                    }}
+                  />
+                  <span>
+                    {isTv
+                      ? "Start search for missing TV series"
+                      : "Start search for missing movie"}
+                  </span>
+                </label>
 
                 <div className="flex justify-end gap-2 pt-1">
                   <Button

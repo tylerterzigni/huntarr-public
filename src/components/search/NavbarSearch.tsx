@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { flushSync, createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SearchPreviewDropdown } from "@/components/search/SearchPreviewDropdown";
+import { usePinToVisualViewport } from "@/hooks/usePinToVisualViewport";
 import {
   SEARCH_PREVIEW_INITIAL,
   SEARCH_PREVIEW_MORE,
@@ -44,10 +45,20 @@ export function NavbarSearch({
     [onOpenChange]
   );
 
+  const getHeader = useCallback(
+    () => containerRef.current?.closest("header") ?? null,
+    []
+  );
+  usePinToVisualViewport(getHeader, open);
+
   const hideMobileKeyboard = useCallback(() => {
     if (!window.matchMedia("(max-width: 767px)").matches) return;
     inputRef.current?.blur();
   }, []);
+
+  /** First results after opening: hide immediately. After tapping back in, wait for a typing pause. */
+  const hideKeyboardOnResultsRef = useRef(true);
+  const lastTypedAtRef = useRef(0);
 
   const handleClose = useCallback(() => {
     setSearchOpen(false);
@@ -58,22 +69,53 @@ export function NavbarSearch({
     setShowPreview(false);
     setLoading(false);
     setLoadingMore(false);
+    hideKeyboardOnResultsRef.current = true;
     inputRef.current?.blur();
   }, [setSearchOpen]);
 
+  const swallowClickRef = useRef<((event: MouseEvent) => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (swallowClickRef.current) {
+        document.removeEventListener("click", swallowClickRef.current, true);
+        swallowClickRef.current = null;
+      }
+    };
+  }, []);
+
   // Delay outside-dismiss so the opening tap cannot instantly close after layout shift.
+  // Swallow the following click so the same tap cannot select a poster behind search.
   useEffect(() => {
     if (!open) return;
+
+    function isSearchUi(target: EventTarget | null) {
+      if (!(target instanceof Node)) return false;
+      if (containerRef.current?.contains(target)) return true;
+      if (target instanceof Element && target.closest("[data-search-preview]")) return true;
+      return false;
+    }
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") handleClose();
     }
 
     function onPointerDown(e: PointerEvent) {
-      const target = e.target;
-      if (!(target instanceof Node)) return;
-      if (containerRef.current?.contains(target)) return;
+      if (isSearchUi(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
       handleClose();
+
+      const swallowClick = (clickEvent: MouseEvent) => {
+        clickEvent.preventDefault();
+        clickEvent.stopPropagation();
+      };
+      swallowClickRef.current = swallowClick;
+      document.addEventListener("click", swallowClick, true);
+      window.setTimeout(() => {
+        document.removeEventListener("click", swallowClick, true);
+        if (swallowClickRef.current === swallowClick) swallowClickRef.current = null;
+      }, 500);
     }
 
     document.addEventListener("keydown", onKeyDown);
@@ -137,6 +179,22 @@ export function NavbarSearch({
     };
   }, [open, query]);
 
+  useEffect(() => {
+    if (!open || loading || !searched) return;
+
+    if (hideKeyboardOnResultsRef.current) {
+      hideMobileKeyboard();
+      return;
+    }
+
+    const idleMs = 1600;
+    const wait = Math.max(0, lastTypedAtRef.current + idleMs - Date.now());
+    const timer = window.setTimeout(() => {
+      hideMobileKeyboard();
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [open, loading, searched, hideMobileKeyboard]);
+
   const handleLoadMore = useCallback(async () => {
     const trimmed = query.trim();
     if (!trimmed || loadingMore || !hasMore) return;
@@ -183,6 +241,16 @@ export function NavbarSearch({
       ref={containerRef}
       className={cn("relative shrink-0", open && "z-50 min-w-0 flex-1 md:flex-none")}
     >
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            data-search-dismiss
+            aria-hidden
+            className="fixed inset-0 z-[35]"
+          />,
+          document.body
+        )}
       <form
         onSubmit={handleSearch}
         style={textColor ? { color: textColor } : undefined}
@@ -219,12 +287,18 @@ export function NavbarSearch({
           spellCheck={false}
           autoComplete="off"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            lastTypedAtRef.current = Date.now();
+            setQuery(e.target.value);
+          }}
           onFocus={() => {
             if (!open) {
+              hideKeyboardOnResultsRef.current = true;
               flushSync(() => {
                 setSearchOpen(true);
               });
+            } else {
+              hideKeyboardOnResultsRef.current = false;
             }
           }}
           placeholder={open ? "Movies, TV & people..." : undefined}
@@ -270,6 +344,7 @@ export function NavbarSearch({
           onSelect={handlePreviewSelect}
           onLoadMore={handleLoadMore}
           onScrollContent={hideMobileKeyboard}
+          anchorRef={containerRef}
         />
       )}
     </div>

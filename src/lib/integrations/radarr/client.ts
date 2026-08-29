@@ -71,5 +71,8 @@ export async function addRadarrMovie(
 }
 
 export async function getRadarrMovies(instance: DecryptedInstance<ArrCredentials>) {
-  return arrFetch<Array<{ tmdbId: number; title: string }>>(instance, "/movie");
+  return arrFetch<Array<{ tmdbId: number; title: string; hasFile?: boolean }>>(
+    instance,
+    "/movie"
+  );
 }

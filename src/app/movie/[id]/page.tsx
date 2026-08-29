@@ -6,6 +6,7 @@ import { TitleDetailClient } from "@/components/media/TitleDetailClient";
 import { TitleDetailRelated } from "@/components/media/TitleDetailRelated";
 import { getDetailRelatedItems } from "@/lib/integrations/tmdb/related";
 import { getLibraryIds, getPlexLibraryIds, getWatchedIds } from "@/lib/recommendations/filters";
+import { getDownloadedMovieIds } from "@/lib/integrations/arr/library";
 import { getPlexPlayUrl } from "@/lib/integrations/plex/play-url";
 import { isHidden } from "@/lib/hide-list";
 import { isMediaLiked } from "@/lib/liked-list";
@@ -36,8 +37,11 @@ export default async function MoviePage({ params }: PageProps) {
     );
   }
 
-  const libraryIds = await getLibraryIds();
-  const plexIds = await getPlexLibraryIds();
+  const [libraryIds, plexIds, downloadedMovieIds] = await Promise.all([
+    getLibraryIds(),
+    getPlexLibraryIds(),
+    getDownloadedMovieIds().catch(() => new Set<string>()),
+  ]);
   const [prefs] = await db
     .select()
     .from(userPreferences)
@@ -54,7 +58,9 @@ export default async function MoviePage({ params }: PageProps) {
     title,
     Number.isFinite(releaseYear) ? releaseYear : undefined
   );
-  const inPlex = plexIds.has(`movie:${tmdbId}`);
+  const movieKey = `movie:${tmdbId}`;
+  // Treat Radarr hasFile like Plex so Request becomes Play on Plex + trailer, matching TV.
+  const inPlex = plexIds.has(movieKey) || downloadedMovieIds.has(movieKey);
   const plexPlayUrl = inPlex ? await getPlexPlayUrl(tmdbId, "movie", title) : null;
   const { recommendations, similar } = await getDetailRelatedItems(
     details,
@@ -70,10 +76,10 @@ export default async function MoviePage({ params }: PageProps) {
         details={details}
         mediaType="movie"
         tmdbId={tmdbId}
-        inLibrary={libraryIds.has(`movie:${tmdbId}`)}
+        inLibrary={libraryIds.has(movieKey)}
         inPlex={inPlex}
         plexPlayUrl={plexPlayUrl}
-        watched={watchedIds.has(`movie:${tmdbId}`)}
+        watched={watchedIds.has(movieKey)}
         isHidden={hidden}
         isLiked={liked}
         isAdmin={session.user.role === "admin"}
