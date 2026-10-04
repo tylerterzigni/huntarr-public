@@ -8,7 +8,10 @@ import { PosterImage } from "@/components/media/PosterImage";
 import { useClampedDropdownStyle } from "@/components/search/use-clamped-dropdown-style";
 import { cn, posterUrl } from "@/lib/utils";
 import {
+  compareReleaseDates,
   dispatchRemindersChanged,
+  localToday,
+  parseLocalDate,
   reminderTrailerHref,
   type UpcomingRelease,
   type UpcomingReminder,
@@ -17,15 +20,14 @@ import {
 /** A reminder with the release that lands in the current week. */
 export type WeekReminder = UpcomingReminder & { release: UpcomingRelease };
 
-function parseLocalDate(date: string) {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
-/** Keep reminders with a release in the viewer's current Sunday–Saturday week. */
+/**
+ * Keep reminders with a release in the viewer's current Sunday–Saturday week, soonest first
+ * (same order as the Reminders page: upcoming days, then days already past).
+ */
 export function pickThisWeek(items: UpcomingReminder[], now = new Date()): WeekReminder[] {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
   const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+  const today = localToday(now);
   const picked: WeekReminder[] = [];
   for (const item of items) {
     const release = item.releases
@@ -33,10 +35,14 @@ export function pickThisWeek(items: UpcomingReminder[], now = new Date()): WeekR
         const date = parseLocalDate(r.date);
         return date >= start && date < end;
       })
-      .sort((a, b) => a.date.localeCompare(b.date))[0];
+      .sort((a, b) => compareReleaseDates(a.date, b.date, today))[0];
     if (release) picked.push({ ...item, release });
   }
-  return picked.sort((a, b) => a.release.date.localeCompare(b.release.date));
+  return picked.sort(
+    (a, b) =>
+      compareReleaseDates(a.release.date, b.release.date, today) ||
+      a.title.localeCompare(b.title, undefined, { sensitivity: "base" })
+  );
 }
 
 function formatDay(date: string) {

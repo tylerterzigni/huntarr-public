@@ -8,17 +8,31 @@ import {
   listReminders,
   removeReminder,
 } from "@/lib/reminders";
+import { primaryRelease } from "@/lib/reminders/releases";
+import { getTmdbRegion } from "@/lib/settings/global";
 import { parkInArr, removeParkedFromArr, resolveReminderInstance } from "@/lib/reminders/arr";
 import { z } from "zod";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const items = await listReminders(session.user.id);
-  return NextResponse.json({ items });
+  // The navbar only needs the count; the Reminders page asks for release dates too.
+  if (new URL(request.url).searchParams.get("releases") !== "1") {
+    return NextResponse.json({ items });
+  }
+
+  const region = await getTmdbRegion();
+  const withReleases = await Promise.all(
+    items.map(async (item) => ({
+      ...item,
+      release: await primaryRelease(item, region).catch(() => null),
+    }))
+  );
+  return NextResponse.json({ items: withReleases });
 }
 
 const mediaTypeSchema = z.enum(["movie", "tv"]);

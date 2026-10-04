@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { listReminders } from "@/lib/reminders";
-import { getMovieReleaseDates, getTvAirInfo } from "@/lib/integrations/tmdb/client";
+import { movieReleases, tvReleases } from "@/lib/reminders/releases";
 import { getTmdbRegion } from "@/lib/settings/global";
-import type { UpcomingRelease } from "@/lib/reminders/client";
 
 export const dynamic = "force-dynamic";
-
-/** TMDB release types: 3 = theatrical, 4 = digital. */
-const MOVIE_RELEASE_TYPES: Record<number, string> = { 3: "Theatrical", 4: "Digital" };
 
 /** Only send dates near today; the client narrows to its local calendar week. */
 const WINDOW_DAYS = 8;
@@ -16,35 +12,6 @@ const WINDOW_DAYS = 8;
 function withinWindow(date: string, now: number) {
   const time = Date.parse(`${date}T00:00:00Z`);
   return Number.isFinite(time) && Math.abs(time - now) <= WINDOW_DAYS * 86_400_000;
-}
-
-async function movieReleases(tmdbId: number, region: string): Promise<UpcomingRelease[]> {
-  const data = await getMovieReleaseDates(tmdbId);
-  const results = data.results ?? [];
-  const regional =
-    results.find((r) => r.iso_3166_1 === region) ?? results.find((r) => r.iso_3166_1 === "US");
-  const releases: UpcomingRelease[] = [];
-  for (const release of regional?.release_dates ?? []) {
-    const label = MOVIE_RELEASE_TYPES[release.type];
-    if (label && release.release_date) {
-      releases.push({ date: release.release_date.slice(0, 10), label });
-    }
-  }
-  return releases;
-}
-
-async function tvReleases(tmdbId: number): Promise<UpcomingRelease[]> {
-  const data = await getTvAirInfo(tmdbId);
-  return [data.last_episode_to_air, data.next_episode_to_air].flatMap((episode) =>
-    episode?.air_date
-      ? [
-          {
-            date: episode.air_date.slice(0, 10),
-            label: `S${episode.season_number}E${episode.episode_number}`,
-          },
-        ]
-      : []
-  );
 }
 
 export async function GET() {

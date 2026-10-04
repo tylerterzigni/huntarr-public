@@ -18,8 +18,12 @@ import {
 import { cn, posterUrl } from "@/lib/utils";
 import {
   REMINDERS_CHANGED_EVENT,
+  compareReleaseDates,
   dispatchRemindersChanged,
+  formatReleaseDate,
+  localToday,
   reminderTrailerHref,
+  type UpcomingRelease,
 } from "@/lib/reminders/client";
 import type { MediaType } from "@/types";
 
@@ -31,6 +35,8 @@ interface ReminderItem {
   year: number | null;
   posterPath: string | null;
   trailerUrl: string | null;
+  /** Digital (else theatrical) date for movies; next (else last) episode for TV. */
+  release: UpcomingRelease | null;
 }
 
 function serviceName(mediaType: MediaType) {
@@ -56,7 +62,7 @@ export function RemindersClient() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/reminders");
+      const res = await fetch("/api/reminders?releases=1");
       if (res.ok) {
         const data = (await res.json()) as { items: ReminderItem[] };
         setItems(data.items);
@@ -73,7 +79,13 @@ export function RemindersClient() {
     return () => window.removeEventListener(REMINDERS_CHANGED_EVENT, reload);
   }, [load]);
 
-  const allSortedItems = useMemo(() => sortByTitle(items), [items]);
+  const allSortedItems = useMemo(() => {
+    const today = localToday();
+    // sortByTitle first so titles sharing a date (or with none) stay alphabetical.
+    return sortByTitle(items).sort((a, b) =>
+      compareReleaseDates(a.release?.date ?? null, b.release?.date ?? null, today)
+    );
+  }, [items]);
   const sortedItems = useMemo(
     () =>
       typeFilter ? allSortedItems.filter((item) => item.mediaType === typeFilter) : allSortedItems,
@@ -250,9 +262,13 @@ export function RemindersClient() {
                         <Link href={detailHref} className="block truncate font-medium hover:underline">
                           {item.title}
                         </Link>
-                        <span className="text-muted-foreground">
+                        <span className="block truncate text-muted-foreground">
                           {item.mediaType === "movie" ? "Movie" : "TV"}
-                          {item.year ? ` · ${item.year}` : ""}
+                          {item.release
+                            ? ` · ${item.release.label} · ${formatReleaseDate(item.release.date)}`
+                            : item.year
+                              ? ` · ${item.year}`
+                              : ""}
                         </span>
                       </div>
                       <div className="flex shrink-0 items-center gap-1 sm:gap-2">

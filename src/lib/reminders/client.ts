@@ -15,6 +15,39 @@ export interface UpcomingRelease {
   label: string;
 }
 
+/** Parse a YYYY-MM-DD date as local midnight (not UTC, which can shift the day). */
+export function parseLocalDate(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/** e.g. "Oct 14, 2026" */
+export function formatReleaseDate(date: string) {
+  return parseLocalDate(date).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** Today's local date as YYYY-MM-DD. */
+export function localToday(now = new Date()) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * Soonest release first: upcoming dates (today onward) ascending, then already-released dates
+ * newest first, then titles with no known date.
+ */
+export function compareReleaseDates(a: string | null, b: string | null, today = localToday()) {
+  if (!a || !b) return a ? -1 : b ? 1 : 0;
+  const aUpcoming = a >= today;
+  const bUpcoming = b >= today;
+  if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+  return aUpcoming ? a.localeCompare(b) : b.localeCompare(a);
+}
+
 export interface UpcomingReminder {
   id: string;
   tmdbId: number;
