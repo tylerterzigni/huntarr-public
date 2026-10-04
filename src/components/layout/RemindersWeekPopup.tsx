@@ -114,6 +114,11 @@ function WeekCard({
   );
 }
 
+const WEEK_GROUPS = [
+  { mediaType: "movie", label: "Movies" },
+  { mediaType: "tv", label: "TV Shows" },
+] as const;
+
 interface RemindersWeekPopupProps {
   items: WeekReminder[];
   anchorRef: RefObject<HTMLElement | null>;
@@ -249,17 +254,30 @@ export function RemindersWeekPopup({
             {message ? "Nothing else coming out this week." : "Nothing coming out this week."}
           </p>
         ) : (
-          <div className="grid grid-cols-3 gap-x-4 gap-y-5">
-            {items.map((item) => (
-              <WeekCard
-                key={item.id}
-                item={item}
-                busy={busyId === item.id}
-                disabled={busyId !== null}
-                onReady={() => void markReady(item)}
-                onView={onClose}
-              />
-            ))}
+          <div className="space-y-6">
+            {WEEK_GROUPS.map(({ mediaType, label }) => {
+              const groupItems = items.filter((item) => item.mediaType === mediaType);
+              if (groupItems.length === 0) return null;
+              return (
+                <section key={mediaType} aria-label={label}>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    {label}
+                  </h3>
+                  <div className="grid grid-cols-3 gap-x-4 gap-y-5">
+                    {groupItems.map((item) => (
+                      <WeekCard
+                        key={item.id}
+                        item={item}
+                        busy={busyId === item.id}
+                        disabled={busyId !== null}
+                        onReady={() => void markReady(item)}
+                        onView={onClose}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         )}
       </div>

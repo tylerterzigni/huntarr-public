@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Check, Loader2, Play, Trash2 } from "lucide-react";
+import { Check, Film, Loader2, Play, Trash2, Tv } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -39,11 +39,18 @@ function serviceName(mediaType: MediaType) {
   return mediaType === "movie" ? "Radarr" : "Sonarr";
 }
 
+const TYPE_FILTERS: { value: MediaType; label: string; icon: typeof Film }[] = [
+  { value: "movie", label: "Movies", icon: Film },
+  { value: "tv", label: "TV Shows", icon: Tv },
+];
+
 export function RemindersClient() {
   const [items, setItems] = useState<ReminderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [page, setPage] = useState(1);
+  /** `null` shows both; selecting one type deselects the other. */
+  const [typeFilter, setTypeFilter] = useState<MediaType | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [readyId, setReadyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ReminderItem | null>(null);
@@ -68,7 +75,12 @@ export function RemindersClient() {
     return () => window.removeEventListener(REMINDERS_CHANGED_EVENT, reload);
   }, [load]);
 
-  const sortedItems = useMemo(() => sortByTitle(items), [items]);
+  const allSortedItems = useMemo(() => sortByTitle(items), [items]);
+  const sortedItems = useMemo(
+    () =>
+      typeFilter ? allSortedItems.filter((item) => item.mediaType === typeFilter) : allSortedItems,
+    [allSortedItems, typeFilter]
+  );
   const pages = totalPages(sortedItems.length, LIST_PAGE_SIZE);
   const safePage = Math.min(page, pages);
   const pagedItems = paginate(sortedItems, safePage, LIST_PAGE_SIZE);
@@ -152,7 +164,7 @@ export function RemindersClient() {
       )}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <CardTitle>Reminders</CardTitle>
             <ListItemSearch
               items={searchItems}
@@ -164,6 +176,35 @@ export function RemindersClient() {
               title="Find an item on your reminders list"
               disabled={sortedItems.length === 0}
             />
+            <div className="ml-auto flex items-center gap-1" role="group" aria-label="Filter by type">
+              {TYPE_FILTERS.map(({ value, label, icon: Icon }) => {
+                const active = typeFilter === value;
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      // Same green as the old Owned toggle; border always present so size doesn't shift.
+                      "h-8 border px-2.5",
+                      active
+                        ? "border-emerald-300/80 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/15 hover:text-emerald-900"
+                        : "border-transparent text-gray-600 hover:text-gray-900"
+                    )}
+                    aria-pressed={active}
+                    title={active ? "Show movies and TV shows" : `Show only ${label.toLowerCase()}`}
+                    onClick={() => {
+                      setTypeFilter(active ? null : value);
+                      setPage(1);
+                    }}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
           <p className="text-sm text-muted-foreground">
             Movies and shows parked in Radarr/Sonarr without monitoring. Tap Ready to start
@@ -175,9 +216,13 @@ export function RemindersClient() {
             <div className="flex justify-center py-6">
               <Loader2 className="h-5 w-5 animate-spin text-gray-500" />
             </div>
-          ) : sortedItems.length === 0 ? (
+          ) : allSortedItems.length === 0 ? (
             <p className="text-muted-foreground text-sm">
               No reminders yet. Tap Remind Me on a movie or TV show detail page.
+            </p>
+          ) : sortedItems.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No {typeFilter === "movie" ? "movie" : "TV show"} reminders.
             </p>
           ) : (
             <>
