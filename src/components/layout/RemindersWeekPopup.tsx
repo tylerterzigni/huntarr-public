@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Check, Eye, Loader2, X } from "lucide-react";
+import { Check, Eye, Loader2, Play, X } from "lucide-react";
 import { PosterImage } from "@/components/media/PosterImage";
 import { useClampedDropdownStyle } from "@/components/search/use-clamped-dropdown-style";
 import { cn, posterUrl } from "@/lib/utils";
 import {
   dispatchRemindersChanged,
+  reminderTrailerHref,
   type UpcomingRelease,
   type UpcomingReminder,
 } from "@/lib/reminders/client";
@@ -90,6 +91,16 @@ function WeekCard({
             <Eye className="h-3.5 w-3.5" />
             View
           </Link>
+          <a
+            href={reminderTrailerHref(item)}
+            target="_blank"
+            rel="noreferrer"
+            className={overlayBtn}
+            title={item.trailerUrl ? "Watch the official trailer" : "Search YouTube for the trailer"}
+          >
+            <Play className="h-3.5 w-3.5" />
+            Trailer
+          </a>
           <button
             type="button"
             className={overlayBtn}

@@ -20,6 +20,19 @@ export interface UpcomingReminder {
   tmdbId: number;
   mediaType: "movie" | "tv";
   title: string;
+  year: number | null;
   posterPath: string | null;
+  trailerUrl: string | null;
   releases: UpcomingRelease[];
+}
+
+/** Official trailer when known, otherwise a YouTube search for it. */
+export function reminderTrailerHref(item: {
+  title: string;
+  year: number | null;
+  trailerUrl: string | null;
+}): string {
+  if (item.trailerUrl) return item.trailerUrl;
+  const query = [item.title, item.year, "official trailer"].filter(Boolean).join(" ");
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }

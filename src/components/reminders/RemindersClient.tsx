@@ -16,7 +16,11 @@ import {
   totalPages,
 } from "@/components/settings/list-pagination";
 import { cn, posterUrl } from "@/lib/utils";
-import { REMINDERS_CHANGED_EVENT, dispatchRemindersChanged } from "@/lib/reminders/client";
+import {
+  REMINDERS_CHANGED_EVENT,
+  dispatchRemindersChanged,
+  reminderTrailerHref,
+} from "@/lib/reminders/client";
 import type { MediaType } from "@/types";
 
 interface ReminderItem {
@@ -27,12 +31,6 @@ interface ReminderItem {
   year: number | null;
   posterPath: string | null;
   trailerUrl: string | null;
-}
-
-function trailerHref(item: ReminderItem): string {
-  if (item.trailerUrl) return item.trailerUrl;
-  const query = [item.title, item.year, "official trailer"].filter(Boolean).join(" ");
-  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
 function serviceName(mediaType: MediaType) {
@@ -259,7 +257,7 @@ export function RemindersClient() {
                       </div>
                       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                         <a
-                          href={trailerHref(item)}
+                          href={reminderTrailerHref(item)}
                           target="_blank"
                           rel="noreferrer"
                           className={cn(

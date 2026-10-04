@@ -71,7 +71,9 @@ export async function GET() {
           tmdbId: item.tmdbId,
           mediaType: item.mediaType,
           title: item.title,
+          year: item.year,
           posterPath: item.posterPath,
+          trailerUrl: item.trailerUrl,
           releases: releases.filter((release) => withinWindow(release.date, now)),
         };
       } catch {
