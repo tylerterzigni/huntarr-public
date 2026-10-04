@@ -9,6 +9,7 @@ import { getLibraryIds, getPlexLibraryIds, getWatchedIds } from "@/lib/recommend
 import { getArrLibraryIds } from "@/lib/integrations/arr/library";
 import { isHidden } from "@/lib/hide-list";
 import { isMediaLiked } from "@/lib/liked-list";
+import { isReminded } from "@/lib/reminders";
 import { getPlexPlayUrl } from "@/lib/integrations/plex/play-url";
 import { getSonarrTvAvailability } from "@/lib/integrations/arr/availability";
 import { getTmdbRegion } from "@/lib/settings/global";
@@ -51,6 +52,7 @@ export default async function TvDetailPage({ params }: PageProps) {
   const watchedIds = await getWatchedIds(prefs?.tautulliUsernames ?? []);
   const hidden = await isHidden(tmdbId, "tv", session.user.id);
   const liked = await isMediaLiked(tmdbId, "tv", session.user.id);
+  const reminded = await isReminded(tmdbId, "tv", session.user.id);
   const watchRegion = await getTmdbRegion();
   const title = (details.name as string) ?? "";
   const releaseYear = Number((details.first_air_date as string | undefined)?.slice(0, 4));
@@ -93,6 +95,7 @@ export default async function TvDetailPage({ params }: PageProps) {
         watched={watchedIds.has(`tv:${tmdbId}`)}
         isHidden={hidden}
         isLiked={liked}
+        isReminded={reminded}
         isAdmin={session.user.role === "admin"}
         watchRegion={watchRegion}
         rtRatings={rtRatings}

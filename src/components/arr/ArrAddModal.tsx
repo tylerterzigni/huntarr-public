@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { backdropUrl, cn, episodeAvailabilityKey } from "@/lib/utils";
 import { glassSelect } from "@/lib/styles/glass";
 import type { SeasonAvailabilityStatus } from "@/lib/integrations/arr/availability";
@@ -710,7 +710,15 @@ export function ArrAddModal({
                   )}
                 </div>
 
-                {error && <p className="text-sm text-red-600">{error}</p>}
+                {error && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-md border border-red-500/60 bg-red-600/15 px-3 py-2 text-sm font-medium text-red-500"
+                  >
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
 
                 <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-sm text-gray-800">
                   <input

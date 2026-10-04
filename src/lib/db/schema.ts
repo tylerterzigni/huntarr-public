@@ -141,6 +141,32 @@ export const hideListItems = pgTable(
   ]
 );
 
+export const reminderItems = pgTable(
+  "reminder_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tmdbId: integer("tmdb_id").notNull(),
+    mediaType: mediaTypeEnum("media_type").notNull(),
+    title: text("title").notNull(),
+    year: integer("year"),
+    posterPath: text("poster_path"),
+    trailerUrl: text("trailer_url"),
+    /** Radarr/Sonarr instance the title was parked in (unmonitored). */
+    instanceId: uuid("instance_id").references(() => integrationInstances.id, {
+      onDelete: "set null",
+    }),
+    /** True when Huntarr added the title to Arr; false when it was already there. */
+    addedToArr: boolean("added_to_arr").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("reminder_unique_idx").on(table.userId, table.tmdbId, table.mediaType),
+  ]
+);
+
 export const recommendationProfiles = pgTable("recommendation_profiles", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")
@@ -255,6 +281,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   recommendationProfile: one(recommendationProfiles),
   hideListItems: many(hideListItems),
   likedListItems: many(likedListItems),
+  reminderItems: many(reminderItems),
   chatSessions: many(chatSessions),
   arrRequests: many(arrRequestsLog),
   aiProviderConfigs: many(aiProviderConfigs),
@@ -266,3 +293,4 @@ export type IntegrationInstance = typeof integrationInstances.$inferSelect;
 export type HideListItem = typeof hideListItems.$inferSelect;
 export type LikedListItem = typeof likedListItems.$inferSelect;
 export type LikedKind = typeof likedListItems.$inferSelect["kind"];
+export type ReminderItem = typeof reminderItems.$inferSelect;

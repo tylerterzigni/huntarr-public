@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { NavbarSearch } from "@/components/search/NavbarSearch";
 import { LibraryWatchedToggle } from "@/components/layout/LibraryWatchedToggle";
+import { RemindersButton } from "@/components/layout/RemindersButton";
 import { UserAccountMenu } from "@/components/layout/UserAccountMenu";
 import { useDetailNavContrast } from "@/components/providers/DetailNavContrastProvider";
 
@@ -124,6 +125,7 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
           )}
         >
           <LibraryWatchedToggle lightNav={useLight} />
+          <RemindersButton lightNav={useLight} />
           {onChatOpen && (
             <Button variant="outline" size="sm" onClick={onChatOpen}>
               <MessageSquare className="h-4 w-4 mr-1" />

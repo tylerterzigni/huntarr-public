@@ -159,6 +159,30 @@ export async function getTvDetails(id: number) {
   });
 }
 
+export interface TmdbReleaseDates {
+  results?: Array<{
+    iso_3166_1: string;
+    release_dates: Array<{ release_date: string; type: number }>;
+  }>;
+}
+
+export async function getMovieReleaseDates(id: number) {
+  return tmdbFetch<TmdbReleaseDates>(`/movie/${id}/release_dates`);
+}
+
+export async function getTvAirInfo(id: number) {
+  return tmdbFetch<{
+    last_episode_to_air?: TmdbEpisodeAir | null;
+    next_episode_to_air?: TmdbEpisodeAir | null;
+  }>(`/tv/${id}`);
+}
+
+export interface TmdbEpisodeAir {
+  air_date?: string | null;
+  season_number: number;
+  episode_number: number;
+}
+
 export async function getTvSeason(tvId: number, seasonNumber: number) {
   return tmdbFetch<Record<string, unknown>>(`/tv/${tvId}/season/${seasonNumber}`);
 }

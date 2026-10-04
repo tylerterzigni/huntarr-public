@@ -17,6 +17,9 @@ async function arrFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text();
+    if (text.includes("MovieExistsValidator")) {
+      throw new Error("Movie already added to Radarr");
+    }
     throw new Error(`Radarr error ${res.status}: ${text}`);
   }
   if (res.status === 204) return {} as T;
@@ -75,4 +78,50 @@ export async function getRadarrMovies(instance: DecryptedInstance<ArrCredentials
     instance,
     "/movie"
   );
+}
+
+export type RadarrMovieResource = {
+  id: number;
+  tmdbId: number;
+  monitored: boolean;
+  hasFile?: boolean;
+} & Record<string, unknown>;
+
+/** Returns the library movie if it is already in Radarr; otherwise null. */
+export async function findExistingRadarrMovie(
+  instance: DecryptedInstance<ArrCredentials>,
+  tmdbId: number
+): Promise<RadarrMovieResource | null> {
+  const matches = await arrFetch<RadarrMovieResource[]>(instance, `/movie?tmdbId=${tmdbId}`);
+  return matches.find((movie) => Number(movie.tmdbId) === tmdbId) ?? null;
+}
+
+export async function updateRadarrMovie(
+  instance: DecryptedInstance<ArrCredentials>,
+  movie: RadarrMovieResource
+) {
+  return arrFetch<RadarrMovieResource>(instance, `/movie/${movie.id}`, {
+    method: "PUT",
+    body: JSON.stringify(movie),
+  });
+}
+
+export async function searchRadarrMovies(
+  instance: DecryptedInstance<ArrCredentials>,
+  movieIds: number[]
+) {
+  if (movieIds.length === 0) return;
+  return arrFetch(instance, "/command", {
+    method: "POST",
+    body: JSON.stringify({ name: "MoviesSearch", movieIds }),
+  });
+}
+
+export async function deleteRadarrMovie(
+  instance: DecryptedInstance<ArrCredentials>,
+  movieId: number
+) {
+  return arrFetch(instance, `/movie/${movieId}?deleteFiles=false&addImportExclusion=false`, {
+    method: "DELETE",
+  });
 }

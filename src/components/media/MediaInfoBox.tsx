@@ -17,6 +17,7 @@ import { RottenTomatoesIcon, TmdbIcon } from "@/components/media/RatingIcons";
 import { cn, formatAirDate, providerLogoUrl } from "@/lib/utils";
 import { ChevronDown, Download, EyeOff, Loader2, Play } from "lucide-react";
 import { LikeButton } from "@/components/media/LikeButton";
+import { RemindMeButton } from "@/components/media/RemindMeButton";
 import type { MediaType } from "@/types";
 import type { RTRatings } from "@/lib/integrations/rottentomatoes/client";
 
@@ -33,6 +34,7 @@ interface MediaInfoBoxProps {
   plexPlayUrl?: string | null;
   isHidden: boolean;
   isLiked: boolean;
+  isReminded: boolean;
   isAdmin: boolean;
   trailerUrl: string | null;
   onAddToArr: () => void;
@@ -238,6 +240,9 @@ function MediaActionBar({
   inPlex,
   isHidden,
   isLiked,
+  isReminded,
+  year,
+  posterPath,
   trailerUrl,
   plexUrl,
   onAddToArr,
@@ -250,6 +255,9 @@ function MediaActionBar({
   inPlex: boolean;
   isHidden: boolean;
   isLiked: boolean;
+  isReminded: boolean;
+  year: number | null;
+  posterPath: string | null;
   trailerUrl: string | null;
   plexUrl: string;
   onAddToArr: () => void;
@@ -279,6 +287,17 @@ function MediaActionBar({
           <Play className="h-4 w-4 shrink-0" />
           Watch Trailer
         </a>
+      )}
+      {!inPlex && (
+        <RemindMeButton
+          tmdbId={tmdbId}
+          mediaType={mediaType}
+          title={title}
+          year={year}
+          posterPath={posterPath}
+          trailerUrl={trailerUrl}
+          initialReminded={isReminded}
+        />
       )}
       <div className="flex gap-2">
         {!isHidden && (
@@ -312,6 +331,7 @@ export function MediaInfoBox({
   plexPlayUrl,
   isHidden,
   isLiked,
+  isReminded,
   isAdmin,
   trailerUrl,
   onAddToArr,
@@ -323,6 +343,7 @@ export function MediaInfoBox({
   const tmdbScore = voteAverage > 0 ? Math.round(voteAverage * 10) : null;
   const status = details.status as string | undefined;
   const airDate = (details.first_air_date ?? details.release_date) as string | undefined;
+  const releaseYear = Number(airDate?.slice(0, 4));
   const originalLanguage = formatLanguage(details.original_language as string | undefined);
   const productionCountries =
     (details.production_countries as Array<{ iso_3166_1: string; name: string }>) ?? [];
@@ -369,6 +390,9 @@ export function MediaInfoBox({
           inPlex={inPlex}
           isHidden={isHidden}
           isLiked={isLiked}
+          isReminded={isReminded}
+          year={Number.isFinite(releaseYear) && releaseYear > 0 ? releaseYear : null}
+          posterPath={(details.poster_path as string | null | undefined) ?? null}
           trailerUrl={trailerUrl}
           plexUrl={plexUrl}
           onAddToArr={onAddToArr}

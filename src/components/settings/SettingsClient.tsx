@@ -13,36 +13,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2, RefreshCw, Pencil } from "lucide-react";
+import { KeyRound, Loader2, Trash2, RefreshCw, Pencil } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { RecommendationsSettings } from "@/components/settings/RecommendationsSettings";
 import { HomePageSettings } from "@/components/settings/HomePageSettings";
 import { SyncProgressBar } from "@/components/settings/SyncProgressBar";
 import { ListItemSearch } from "@/components/settings/ListItemSearch";
+import {
+  LIST_PAGE_SIZE,
+  ListPagination,
+  paginate,
+  sortByTitle,
+  totalPages,
+} from "@/components/settings/list-pagination";
 import { AiModelInput } from "@/components/settings/AiModelInput";
 import { rememberModel } from "@/lib/ai/model-history";
 import type { SyncJobSnapshot } from "@/lib/integrations/sync-job-types";
 import type { HomeRowId } from "@/lib/home/row-order";
 
-const LIST_PAGE_SIZE = 20;
-
 const settingsTabTriggerClassName =
   "rounded-md border border-gray-300/70 bg-white/35 px-3.5 py-2 text-sm shadow-sm backdrop-blur-md data-[state=active]:border-gray-500 data-[state=active]:bg-white/70 data-[state=active]:font-semibold data-[state=active]:text-gray-900";
-
-function sortByTitle<T extends { title: string }>(items: T[]): T[] {
-  return [...items].sort((a, b) =>
-    a.title.localeCompare(b.title, undefined, { sensitivity: "base" })
-  );
-}
-
-function paginate<T>(items: T[], page: number, pageSize: number): T[] {
-  const start = (page - 1) * pageSize;
-  return items.slice(start, start + pageSize);
-}
-
-function totalPages(count: number, pageSize: number): number {
-  return Math.max(1, Math.ceil(count / pageSize));
-}
 
 interface SettingsData {
   general: { tmdbConfigured: boolean; omdbConfigured: boolean; region: string; language: string };
@@ -1280,48 +1270,6 @@ export function SettingsClient() {
         loadingLabel={deleteConfirm?.loadingLabel ?? "Deleting..."}
         onConfirm={() => void confirmPendingDelete()}
       />
-    </div>
-  );
-}
-
-function ListPagination({
-  page,
-  totalPages: pages,
-  onPrevious,
-  onNext,
-}: {
-  page: number;
-  totalPages: number;
-  onPrevious: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <div className="mt-4 flex items-center justify-center gap-3">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onPrevious}
-        disabled={page <= 1}
-        aria-label="Previous page"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        Previous
-      </Button>
-      <span className="min-w-[4rem] text-center text-sm tabular-nums text-muted-foreground">
-        {page}/{pages}
-      </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onNext}
-        disabled={page >= pages}
-        aria-label="Next page"
-      >
-        Next
-        <ChevronRight className="h-4 w-4" />
-      </Button>
     </div>
   );
 }

@@ -216,10 +216,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to add" },
-      { status: 500 }
-    );
+    const message = err instanceof Error ? err.message : "Failed to add";
+    const alreadyAdded = message.endsWith("already added to Radarr") ||
+      message.endsWith("already added to Sonarr");
+    return NextResponse.json({ error: message }, { status: alreadyAdded ? 409 : 500 });
   }
 }
 

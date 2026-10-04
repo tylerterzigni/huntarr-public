@@ -57,6 +57,13 @@
       "when": 1782700600000,
       "tag": "0007_home_row_hidden",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782700700000,
+      "tag": "0008_reminders",
+      "breakpoints": true
     }
   ]
 }

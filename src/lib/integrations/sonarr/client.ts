@@ -17,6 +17,9 @@ async function arrFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text();
+    if (text.includes("SeriesExistsValidator")) {
+      throw new Error("Series already added to Sonarr");
+    }
     throw new Error(`Sonarr error ${res.status}: ${text}`);
   }
   if (res.status === 204) return {} as T;
@@ -308,4 +311,25 @@ export async function searchSonarrSeason(
     method: "POST",
     body: JSON.stringify({ name: "SeasonSearch", seriesId, seasonNumber }),
   });
+}
+
+export async function searchSonarrSeries(
+  instance: DecryptedInstance<ArrCredentials>,
+  seriesId: number
+) {
+  return arrFetch(instance, "/command", {
+    method: "POST",
+    body: JSON.stringify({ name: "SeriesSearch", seriesId }),
+  });
+}
+
+export async function deleteSonarrSeries(
+  instance: DecryptedInstance<ArrCredentials>,
+  seriesId: number
+) {
+  return arrFetch(
+    instance,
+    `/series/${seriesId}?deleteFiles=false&addImportListExclusion=false`,
+    { method: "DELETE" }
+  );
 }

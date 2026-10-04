@@ -10,6 +10,7 @@ import { getDownloadedMovieIds } from "@/lib/integrations/arr/library";
 import { getPlexPlayUrl } from "@/lib/integrations/plex/play-url";
 import { isHidden } from "@/lib/hide-list";
 import { isMediaLiked } from "@/lib/liked-list";
+import { isReminded } from "@/lib/reminders";
 import { getTmdbRegion } from "@/lib/settings/global";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -50,6 +51,7 @@ export default async function MoviePage({ params }: PageProps) {
   const watchedIds = await getWatchedIds(prefs?.tautulliUsernames ?? []);
   const hidden = await isHidden(tmdbId, "movie", session.user.id);
   const liked = await isMediaLiked(tmdbId, "movie", session.user.id);
+  const reminded = await isReminded(tmdbId, "movie", session.user.id);
   const watchRegion = await getTmdbRegion();
   const title = (details.title as string) ?? "";
   const releaseYear = Number((details.release_date as string | undefined)?.slice(0, 4));
@@ -82,6 +84,7 @@ export default async function MoviePage({ params }: PageProps) {
         watched={watchedIds.has(movieKey)}
         isHidden={hidden}
         isLiked={liked}
+        isReminded={reminded}
         isAdmin={session.user.role === "admin"}
         watchRegion={watchRegion}
         rtRatings={rtRatings}

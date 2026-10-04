@@ -27,6 +27,7 @@ interface TitleDetailClientProps {
   watched: boolean;
   isHidden: boolean;
   isLiked: boolean;
+  isReminded?: boolean;
   isAdmin: boolean;
   watchRegion?: string;
   rtRatings?: RTRatings | null;
@@ -46,6 +47,7 @@ export function TitleDetailClient({
   watched,
   isHidden,
   isLiked,
+  isReminded = false,
   isAdmin,
   watchRegion = "US",
   rtRatings,
@@ -218,6 +220,7 @@ export function TitleDetailClient({
             plexPlayUrl={plexPlayUrl}
             isHidden={isHidden}
             isLiked={isLiked}
+            isReminded={isReminded}
             isAdmin={isAdmin}
             trailerUrl={trailerUrl}
             onAddToArr={() => setArrOpen(true)}
