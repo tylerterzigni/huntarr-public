@@ -23,6 +23,9 @@ interface OptionsMenuProps {
 /** Popup shows once per browser session, this long after Huntarr loads. */
 const WEEK_POPUP_DELAY_MS = 3000;
 const WEEK_POPUP_SESSION_KEY = "huntarr:reminders-week-popup-shown";
+/** Press-and-hold on Reminders reopens the week popup (iOS has no hover/right-click). */
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_PX = 10;
 
 function popupAlreadyShown() {
   try {
@@ -40,6 +43,32 @@ function markPopupShown() {
   }
 }
 
+/**
+ * iOS keeps the held finger's long-press going onto whatever renders beneath it,
+ * selecting text and showing Copy / Look Up. Block selection until the finger lifts.
+ */
+function blockSelectionUntilRelease() {
+  // iOS Safari ignores unprefixed `user-select`; it also doesn't always fire selectstart.
+  const root = document.documentElement.style;
+  const previousUserSelect = root.webkitUserSelect;
+  root.webkitUserSelect = "none";
+  const blockSelect = (e: Event) => e.preventDefault();
+  const release = () => {
+    root.webkitUserSelect = previousUserSelect;
+    document.removeEventListener("selectstart", blockSelect, true);
+    document.removeEventListener("touchend", release, true);
+    document.removeEventListener("touchcancel", release, true);
+    document.removeEventListener("pointerup", release, true);
+    window.clearTimeout(fallback);
+    window.getSelection()?.removeAllRanges();
+  };
+  const fallback = window.setTimeout(release, 3000);
+  document.addEventListener("selectstart", blockSelect, true);
+  document.addEventListener("touchend", release, true);
+  document.addEventListener("touchcancel", release, true);
+  document.addEventListener("pointerup", release, true);
+}
+
 const itemClass =
   "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm text-gray-700 outline-none hover:bg-seerr-hover hover:text-gray-900 data-[highlighted]:bg-seerr-hover data-[highlighted]:text-gray-900";
 
@@ -49,6 +78,9 @@ export function OptionsMenu({ onChatOpen, lightNav = false, textColor }: Options
   const { hideLibraryAndWatched, toggleHideLibraryAndWatched } = useLibraryWatchedVisibility();
   const [count, setCount] = useState<number | null>(null);
   const [weekItems, setWeekItems] = useState<WeekReminder[] | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const longPressedRef = useRef(false);
 
   const loadCount = useCallback(async () => {
     try {
@@ -68,32 +100,89 @@ export function OptionsMenu({ onChatOpen, lightNav = false, textColor }: Options
     return () => window.removeEventListener(REMINDERS_CHANGED_EVENT, reload);
   }, [loadCount]);
 
+  /** `null` when the fetch fails (the popup is a convenience, so stay silent). */
+  const loadThisWeek = useCallback(async (): Promise<WeekReminder[] | null> => {
+    try {
+      const res = await fetch("/api/reminders/upcoming");
+      if (!res.ok) return null;
+      const data = (await res.json()) as { items: UpcomingReminder[] };
+      return pickThisWeek(data.items);
+    } catch {
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     if (popupAlreadyShown()) return;
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       markPopupShown();
-      try {
-        const res = await fetch("/api/reminders/upcoming");
-        if (!res.ok) return;
-        const data = (await res.json()) as { items: UpcomingReminder[] };
-        const thisWeek = pickThisWeek(data.items);
-        if (!cancelled && thisWeek.length > 0) setWeekItems(thisWeek);
-      } catch {
-        // Silent: the popup is a convenience.
-      }
+      const thisWeek = await loadThisWeek();
+      if (!cancelled && thisWeek && thisWeek.length > 0) setWeekItems(thisWeek);
     }, WEEK_POPUP_DELAY_MS);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [loadThisWeek]);
 
   const closePopup = useCallback(() => setWeekItems(null), []);
 
+  /** Opened on demand, so show it even when the week is empty. */
+  const openWeekPopup = useCallback(async () => {
+    setMenuOpen(false);
+    const thisWeek = await loadThisWeek();
+    if (thisWeek) setWeekItems(thisWeek);
+  }, [loadThisWeek]);
+
+  const cancelPress = useCallback(() => {
+    if (pressRef.current) window.clearTimeout(pressRef.current.timer);
+    pressRef.current = null;
+  }, []);
+
+  useEffect(() => cancelPress, [cancelPress]);
+
+  function onRemindersPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0) return;
+    cancelPress();
+    longPressedRef.current = false;
+    const timer = window.setTimeout(() => {
+      pressRef.current = null;
+      longPressedRef.current = true;
+      // The finger lifting after a hold still fires a click; don't let it land on the page.
+      const swallowClick = (clickEvent: MouseEvent) => {
+        clickEvent.preventDefault();
+        clickEvent.stopPropagation();
+      };
+      document.addEventListener("click", swallowClick, true);
+      window.setTimeout(() => document.removeEventListener("click", swallowClick, true), 800);
+      blockSelectionUntilRelease();
+      void openWeekPopup();
+    }, LONG_PRESS_MS);
+    pressRef.current = { timer, x: e.clientX, y: e.clientY };
+  }
+
+  function onRemindersPointerMove(e: React.PointerEvent) {
+    const press = pressRef.current;
+    if (!press) return;
+    if (
+      Math.abs(e.clientX - press.x) > LONG_PRESS_MOVE_PX ||
+      Math.abs(e.clientY - press.y) > LONG_PRESS_MOVE_PX
+    ) {
+      cancelPress();
+    }
+  }
+
   return (
     <div ref={anchorRef} className="relative shrink-0">
-      <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Root
+        modal={false}
+        open={menuOpen}
+        onOpenChange={(open) => {
+          if (open) longPressedRef.current = false;
+          setMenuOpen(open);
+        }}
+      >
         <DropdownMenu.Trigger asChild>
           <button
             type="button"
@@ -153,7 +242,28 @@ export function OptionsMenu({ onChatOpen, lightNav = false, textColor }: Options
                 {hideLibraryAndWatched ? "Hidden" : "Shown"}
               </span>
             </DropdownMenu.Item>
-            <DropdownMenu.Item className={itemClass} onSelect={() => router.push("/reminders")}>
+            <DropdownMenu.Item
+              className={cn(itemClass, "select-none [-webkit-touch-callout:none] [-webkit-user-select:none]")}
+              onSelect={(e) => {
+                if (longPressedRef.current) {
+                  e.preventDefault();
+                  return;
+                }
+                router.push("/reminders");
+              }}
+              onPointerDown={onRemindersPointerDown}
+              onPointerMove={onRemindersPointerMove}
+              onPointerUp={cancelPress}
+              onPointerCancel={cancelPress}
+              onPointerLeave={cancelPress}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                cancelPress();
+                longPressedRef.current = true;
+                void openWeekPopup();
+              }}
+              title="Click to open Reminders · press and hold or right-click for this week"
+            >
               <Bell className="h-4 w-4 text-amber-700" />
               <span className="flex-1">Reminders</span>
               {!!count && (

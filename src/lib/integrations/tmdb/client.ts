@@ -146,7 +146,7 @@ export async function getMovieDetails(id: number) {
   const region = await getTmdbRegion();
   return tmdbFetch<Record<string, unknown>>(`/movie/${id}`, {
     append_to_response:
-      "credits,watch/providers,similar,recommendations,videos,external_ids,keywords",
+      "credits,watch/providers,similar,recommendations,videos,external_ids,keywords,release_dates",
     watch_region: region,
   });
 }

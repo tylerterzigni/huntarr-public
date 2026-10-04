@@ -27,7 +27,7 @@ function PersonScroll({ title, people }: { title: string; people: TmdbCreditPers
   return (
     <section className="mt-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">{title}</h2>
-      <HorizontalScrollRow className="-mx-1 px-1 pb-2">
+      <HorizontalScrollRow className="cast-scroll-row -mx-1 px-1 pb-2">
         {people.map((person) => (
           <PersonCard
             key={`${title}-${person.id}-${person.character ?? person.job}`}

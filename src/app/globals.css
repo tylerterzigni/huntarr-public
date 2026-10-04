@@ -105,6 +105,15 @@ html.pwa-standalone .horizontal-scroll-row {
   -webkit-user-drag: none;
 }
 
+/* Title details (browser only): keep the main column from growing past the info box,
+   and cap the cast row at 6 cards (6 × 120px + 5 × 16px gap + 8px row padding). */
+html:not(.pwa-standalone) .title-detail-main {
+  min-width: 0;
+}
+html:not(.pwa-standalone) .cast-scroll-row {
+  max-width: 808px;
+}
+
 .horizontal-scroll-row .scroll-row-item:hover {
   transform: none !important;
   z-index: auto !important;

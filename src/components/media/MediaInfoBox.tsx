@@ -15,6 +15,7 @@ import {
 } from "@/components/media/ExternalLinkIcons";
 import { RottenTomatoesIcon, TmdbIcon } from "@/components/media/RatingIcons";
 import { cn, formatAirDate, providerLogoUrl } from "@/lib/utils";
+import type { TmdbReleaseDates } from "@/lib/integrations/tmdb/client";
 import { ChevronDown, Download, EyeOff, Loader2, Play } from "lucide-react";
 import { LikeButton } from "@/components/media/LikeButton";
 import { RemindMeButton } from "@/components/media/RemindMeButton";
@@ -49,6 +50,19 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
       <dd className="text-right text-gray-600">{children}</dd>
     </div>
   );
+}
+
+/** TMDB release types: 3 = theatrical, 4 = digital. Earliest date in the region (US fallback). */
+function movieReleaseDate(details: Record<string, unknown>, region: string, type: number) {
+  const results =
+    (details.release_dates as TmdbReleaseDates | undefined)?.results ?? [];
+  const regional =
+    results.find((r) => r.iso_3166_1 === region) ?? results.find((r) => r.iso_3166_1 === "US");
+  const dates = (regional?.release_dates ?? [])
+    .filter((release) => release.type === type && release.release_date)
+    .map((release) => release.release_date.slice(0, 10))
+    .sort();
+  return dates[0];
 }
 
 function countryFlag(iso: string): string {
@@ -344,6 +358,10 @@ export function MediaInfoBox({
   const status = details.status as string | undefined;
   const airDate = (details.first_air_date ?? details.release_date) as string | undefined;
   const releaseYear = Number(airDate?.slice(0, 4));
+  const digitalDate =
+    mediaType === "movie" ? movieReleaseDate(details, watchRegion, 4) : undefined;
+  const theatricalDate =
+    mediaType === "movie" ? movieReleaseDate(details, watchRegion, 3) : undefined;
   const originalLanguage = formatLanguage(details.original_language as string | undefined);
   const productionCountries =
     (details.production_countries as Array<{ iso_3166_1: string; name: string }>) ?? [];
@@ -447,7 +465,22 @@ export function MediaInfoBox({
 
         <dl>
           {status && <InfoRow label="Status">{status}</InfoRow>}
-          {airDate && (
+          {digitalDate || theatricalDate ? (
+            <InfoRow label="Release Date">
+              <span className="flex flex-col items-end gap-0.5">
+                {digitalDate && (
+                  <span className="whitespace-nowrap">
+                    Digital: {formatAirDate(digitalDate, "short")}
+                  </span>
+                )}
+                {theatricalDate && (
+                  <span className="whitespace-nowrap">
+                    Theatrical: {formatAirDate(theatricalDate, "short")}
+                  </span>
+                )}
+              </span>
+            </InfoRow>
+          ) : airDate && (
             <InfoRow label={mediaType === "tv" ? "First Air Date" : "Release Date"}>
               {formatAirDate(airDate)}
             </InfoRow>

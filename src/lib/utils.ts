@@ -39,10 +39,13 @@ export function formatYear(date: string | null | undefined) {
   return date.slice(0, 4);
 }
 
-export function formatAirDate(date: string | null | undefined) {
+export function formatAirDate(
+  date: string | null | undefined,
+  month: "long" | "short" = "long"
+) {
   if (!date) return null;
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
-    month: "long",
+    month,
     day: "numeric",
     year: "numeric",
   });

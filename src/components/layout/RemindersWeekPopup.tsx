@@ -128,6 +128,7 @@ export function RemindersWeekPopup({
   onItemsChange,
 }: RemindersWeekPopupProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const dropdownStyle = useClampedDropdownStyle(anchorRef, true, 420, { align: "center" });
@@ -137,11 +138,23 @@ export function RemindersWeekPopup({
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
+    // Swallow the dismissing tap so it can't also open a poster behind the popup.
+    function swallowClick(e: MouseEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    let swallowTimer = 0;
     function onPointerDown(e: PointerEvent) {
       const target = e.target;
       if (!(target instanceof Node)) return;
       if (panelRef.current?.contains(target)) return;
       if (anchorRef.current?.contains(target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      document.addEventListener("click", swallowClick, true);
+      swallowTimer = window.setTimeout(() => {
+        document.removeEventListener("click", swallowClick, true);
+      }, 500);
       onClose();
     }
 
@@ -153,8 +166,33 @@ export function RemindersWeekPopup({
       window.clearTimeout(timer);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown, true);
+      // Leave a pending swallow in place for the tap that just closed us; its timer cleans up.
+      if (!swallowTimer) document.removeEventListener("click", swallowClick, true);
     };
   }, [anchorRef, onClose]);
+
+  // While open, scrolling only moves the popup's list — never the page behind it.
+  useEffect(() => {
+    function scrollsInList(target: EventTarget | null) {
+      const list = scrollRef.current;
+      return (
+        !!list &&
+        target instanceof Node &&
+        list.contains(target) &&
+        list.scrollHeight > list.clientHeight
+      );
+    }
+    function blockPageScroll(e: Event) {
+      if (!scrollsInList(e.target)) e.preventDefault();
+    }
+
+    document.addEventListener("wheel", blockPageScroll, { passive: false });
+    document.addEventListener("touchmove", blockPageScroll, { passive: false });
+    return () => {
+      document.removeEventListener("wheel", blockPageScroll);
+      document.removeEventListener("touchmove", blockPageScroll);
+    };
+  }, []);
 
   async function markReady(item: WeekReminder) {
     if (busyId) return;
@@ -181,8 +219,10 @@ export function RemindersWeekPopup({
       ref={panelRef}
       role="dialog"
       aria-label="Reminders coming out this week"
+      data-no-pull-refresh
       className={cn(
-        "z-50 rounded-lg border border-gray-300 bg-white shadow-xl",
+        // The popup can open under a still-held finger (press-and-hold); keep iOS from selecting text.
+        "z-50 select-none rounded-lg border border-gray-300 bg-white shadow-xl [-webkit-touch-callout:none] [-webkit-user-select:none]",
         dropdownStyle ? undefined : "absolute right-0 top-full mt-2 w-[420px]"
       )}
       style={dropdownStyle}
@@ -199,12 +239,15 @@ export function RemindersWeekPopup({
         </button>
       </div>
       <div
-        className="max-h-[min(26rem,calc(100dvh-var(--safe-area-top)-8rem))] overflow-x-hidden overflow-y-auto p-4"
+        ref={scrollRef}
+        className="max-h-[min(26rem,calc(100dvh-var(--safe-area-top)-8rem))] overflow-x-hidden overflow-y-auto overscroll-contain p-4"
         style={dropdownStyle?.maxHeight ? { maxHeight: dropdownStyle.maxHeight } : undefined}
       >
         {message && <p className="mb-3 text-xs text-gray-700">{message}</p>}
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing else coming out this week.</p>
+          <p className="text-sm text-muted-foreground">
+            {message ? "Nothing else coming out this week." : "Nothing coming out this week."}
+          </p>
         ) : (
           <div className="grid grid-cols-3 gap-x-4 gap-y-5">
             {items.map((item) => (
