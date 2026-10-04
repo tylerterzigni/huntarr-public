@@ -5,17 +5,16 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { MessageSquare, Settings, Film, Tv, LogOut } from "lucide-react";
+import { Settings, Film, Home, Tv, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { NavbarSearch } from "@/components/search/NavbarSearch";
-import { LibraryWatchedToggle } from "@/components/layout/LibraryWatchedToggle";
-import { RemindersButton } from "@/components/layout/RemindersButton";
+import { OptionsMenu } from "@/components/layout/OptionsMenu";
 import { UserAccountMenu } from "@/components/layout/UserAccountMenu";
 import { useDetailNavContrast } from "@/components/providers/DetailNavContrastProvider";
 
 const navItems = [
-  { href: "/", label: "Home", icon: Film },
+  { href: "/", label: "Home", icon: Home },
   { href: "/movies", label: "Movies", icon: Film },
   { href: "/tv", label: "TV Shows", icon: Tv },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -70,7 +69,7 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
       <div className="flex h-20 items-center justify-between gap-3 px-4 md:px-8">
         <div
           className={cn(
-            "flex min-w-0 items-center gap-3 md:gap-6",
+            "flex min-w-0 items-center gap-3 md:gap-4 lg:gap-6",
             searchOpen && "flex-1"
           )}
         >
@@ -95,6 +94,8 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
                 key={href}
                 href={href}
                 style={{ color: fg }}
+                aria-label={label}
+                title={label}
                 className={cn(
                   "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-[color,background-color] duration-300",
                   pathname === href
@@ -107,7 +108,8 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
                 )}
               >
                 <Icon className="h-4 w-4" />
-                {label}
+                {/* Icon-only on tablet widths so the nav never runs into the right-side controls. */}
+                <span className="hidden lg:inline">{label}</span>
               </Link>
             ))}
           </nav>
@@ -124,14 +126,11 @@ export function Navbar({ onChatOpen, username }: NavbarProps) {
             searchOpen && "max-md:hidden"
           )}
         >
-          <LibraryWatchedToggle lightNav={useLight} />
-          <RemindersButton lightNav={useLight} />
-          {onChatOpen && (
-            <Button variant="outline" size="sm" onClick={onChatOpen}>
-              <MessageSquare className="h-4 w-4 mr-1" />
-              AI Chat
-            </Button>
-          )}
+          <OptionsMenu
+            onChatOpen={onChatOpen}
+            lightNav={useLight}
+            textColor={isDetailPage ? fg : undefined}
+          />
           {username && <UserAccountMenu username={username} lightNav={useLight} />}
           <Button
             variant="ghost"
